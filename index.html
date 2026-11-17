@@ -54,8 +54,9 @@ h2{font-family:var(--display);font-weight:400;font-size:44px;margin:4px 0 14px;t
 .empty{color:var(--muted);font-size:19px;padding:40px 0;text-align:center;line-height:1.5}
 
 /* Karte */
-.map{background:var(--paper);border:3px solid var(--wood);border-radius:14px;box-shadow:inset 0 0 0 6px #EBD9AE,0 4px 14px rgba(60,30,10,.18);overflow:hidden}
-.map svg{display:block;width:100%;height:auto}
+.map{background:var(--paper);border:3px solid var(--wood);border-radius:14px;box-shadow:inset 0 0 0 6px #EBD9AE,0 4px 14px rgba(60,30,10,.18);overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}
+.stagebox{border:2px dashed #D9C291;border-radius:12px;padding:12px 14px;margin-top:14px;background:#FFFCF2}
+.map svg{display:block;height:auto;max-width:none}
 .lbl{font:800 17px var(--body);fill:var(--ink);paint-order:stroke;stroke:var(--paper);stroke-width:6px;stroke-linejoin:round}
 .lbl.sm{font-size:15px}
 .lbl.muted{fill:#9A8466}
@@ -318,7 +319,7 @@ function trapWarnings(i){const w=[];if(i.type!=="code")return w;const c=String(i
   if(!c)w.push("Code fehlt");
   (i.traps||[]).forEach(t=>{if(t.pos>=c.length)w.push(`Falle ${LET[t.pos]}) passt nicht zur Code-Länge`);else if(c[t.pos]===t.d)w.push(`Falle ${LET[t.pos]}) hat dieselbe Ziffer wie die Lösung`)});return w}
 function parseImport(txt){
-  const out={name:"",goalText:"",b1:"",b2:"",islands:[],errors:[]};let cur=null;
+  const out={name:"",goalText:"",b1:"",b2:"",islands:[],errors:[],stageNames:[]};let cur=null,stg=0;
   const SEC={grundlagen:"route",route:"route",pflicht:"route","wahlpflicht 1":"wp1","weg 1":"wp1",wp1:"wp1","wahlpflicht 2":"wp2","weg 2":"wp2",wp2:"wp2",sprinter:"sprint",sprint:"sprint",abstecher:"sprint"};
   const ART={code:"code","code-insel":"code",vergleich:"compare",vergleichen:"compare","vergleichs-insel":"compare",lehrkraft:"teacher","lehrkraft-insel":"teacher"};
   String(txt).replace(/```[a-z]*/gi,"").split(/\r?\n/).forEach((raw,n)=>{const line=raw.trim();if(!line||line.startsWith("#"))return;
@@ -327,7 +328,9 @@ function parseImport(txt){
     const k=m[1].toLowerCase(),v=m[2].trim();
     if(k==="abenteuer"){out.name=v;return} if(k==="ziel"||k==="belohnung"){out.goalText=v;return}
     if(k==="weg 1"&&!cur){out.b1=v;return} if(k==="weg 2"&&!cur){out.b2=v;return}
-    if(k==="insel"){cur=mkIsl(v||"Insel","code",1,"route");out.islands.push(cur);return}
+    if(!cur&&k!=="insel"&&!k.startsWith("etappe")&&out.islands.length&&stg){out.errors.push(`Zeile ${n+1}: „${m[1]}“ steht zwischen ETAPPE und der ersten INSEL-Zeile.`);return}
+    if(k.startsWith("etappe")){stg++;out.stageNames[stg-1]=v;cur=null;return}
+    if(k==="insel"){cur=mkIsl(v||"Insel","code",1,"route",{stage:Math.max(1,stg)});out.islands.push(cur);return}
     if(!cur){out.errors.push(`Zeile ${n+1}: „${m[1]}“ steht vor der ersten INSEL-Zeile.`);return}
     if(k==="sterne"){cur.stars=Math.max(1,Math.min(5,parseInt(v,10)||1))}
     else if(k==="code"){cur.code=v.replace(/\D/g,"");cur.type="code"}
@@ -373,39 +376,47 @@ AB: Rätsel 1
 STERNE: 3
 CODE: 495
 
-(ABSCHNITT: Grundlagen, Wahlpflicht 1, Wahlpflicht 2 oder Sprinter. ART: Code, Vergleich oder Lehrkraft. Aufgaben ohne eindeutige Zahl, z. B. Zeichnungen, bekommen ART: Vergleich und keinen CODE. Für jede Vergleichs-Insel bitte eine eigene, gut lesbare Lösungsseite im Lösungsblatt, die ich fotografieren kann. FALLE: Teilaufgabe, Ziffer der Falle, =, kurzer Tipp für das Kind.)`;
+(Hat das Abenteuer mehrere Etappen (Abschnitte nacheinander, jeweils mit eigenen Grundlagen, Wahlpflicht und Sprintern), steht vor den Inseln jeder Etappe eine Zeile ETAPPE: Name der Etappe. ABSCHNITT: Grundlagen, Wahlpflicht 1, Wahlpflicht 2 oder Sprinter. ART: Code, Vergleich oder Lehrkraft. Aufgaben ohne eindeutige Zahl, z. B. Zeichnungen, bekommen ART: Vergleich und keinen CODE. Für jede Vergleichs-Insel bitte eine eigene, gut lesbare Lösungsseite im Lösungsblatt, die ich fotografieren kann. FALLE: Teilaufgabe, Ziffer der Falle, =, kurzer Tipp für das Kind.)`;
 
 /* ================= Fortschritt ================= */
 const AP=(sid,aid)=>((S.progress[sid]||={})[aid]||={choice:null,isl:{}});
 const IP=(sid,aid,iid)=>(AP(sid,aid).isl[iid]||={done:false,tries:0,locked:false,pending:false});
 const peek=(sid,aid,iid)=>S.progress[sid]?.[aid]?.isl?.[iid];
 const isDone=(sid,aid,iid)=>!!peek(sid,aid,iid)?.done;
-const choiceOf=(sid,aid)=>S.progress[sid]?.[aid]?.choice||null;
-function secs(a){const g=k=>a.islands.filter(i=>i.sec===k);const L1=g("wp1"),L2=g("wp2");return{R:g("route"),L1,L2,SP:g("sprint"),fork:L1.length+L2.length>0}}
+function choiceOf(sid,aid,k){const ap=S.progress[sid]?.[aid];if(!ap)return null;k=k||1;if(ap.choices&&ap.choices[k])return ap.choices[k];if(k===1&&ap.choice)return ap.choice;return null}
+function setChoice(sid,aid,k,v){const ap=AP(sid,aid);ap.choices=ap.choices||{};if(ap.choice){if(!(1 in ap.choices))ap.choices[1]=ap.choice;delete ap.choice}if(v)ap.choices[k]=v;else delete ap.choices[k]}
+const stageOf=i=>Math.max(1,parseInt(i.stage,10)||1);
+function stagesOf(a){const n=Math.max(1,...a.islands.map(stageOf),(a.stageNames||[]).length);const out=[];
+  for(let k=1;k<=n;k++){const g=s=>a.islands.filter(i=>stageOf(i)===k&&i.sec===s);const L1=g("wp1"),L2=g("wp2");
+    out.push({k,name:(a.stageNames||[])[k-1]||"",R:g("route"),L1,L2,SP:g("sprint"),fork:L1.length+L2.length>0})}return out}
+const stageIslands=a=>stagesOf(a).flatMap(st=>[...st.R,...st.L1,...st.L2,...st.SP]);
 const sumStars=l=>l.reduce((t,i)=>t+(+i.stars||0),0);
 const passed=(sid,aid,iid)=>{const p=peek(sid,aid,iid);return !!(p&&(p.done||p.pending))};
-const forkOpen=(a,sid)=>secs(a).R.every(i=>passed(sid,a.id,i.id));
+function stageComplete(a,sid,st,fn){fn=fn||(i=>passed(sid,a.id,i.id));if(!st.R.every(fn))return false;if(!st.fork)return true;
+  const c=choiceOf(sid,a.id,st.k);if(!c)return false;return (c===1?st.L1:st.L2).every(fn)}
+function stageOpen(a,sid,k){if(k<=1)return true;return stageComplete(a,sid,stagesOf(a)[k-2])}
+function forkOpen(a,sid,k){k=k||1;const st=stagesOf(a)[k-1];return !!st&&stageOpen(a,sid,k)&&st.R.every(i=>passed(sid,a.id,i.id))}
 function status(a,sid,isl){
   const p=peek(sid,a.id,isl.id)||{};
   if(p.done)return"done"; if(p.pending)return"pending";
-  const s=secs(a),ch=choiceOf(sid,a.id);let st="open";
-  const seqOk=list=>{const k=list.indexOf(isl);return k<=0||passed(sid,a.id,list[k-1].id)};
-  if(isl.sec==="route"){if(!seqOk(s.R))st="fog"}
-  else if(isl.sec==="wp1"||isl.sec==="wp2"){const k=isl.sec==="wp1"?1:2;
-    if(ch&&ch!==k)st="closed";else if(!ch||!forkOpen(a,sid))st="fog";else if(!seqOk(k===1?s.L1:s.L2))st="fog"}
-  else if(isl.sec==="sprint"){if(isl.after&&a.islands.some(x=>x.id===isl.after)&&!passed(sid,a.id,isl.after))st="fog"}
-  if(st==="open"&&p.locked)return"locked";
-  return st;
+  const k=stageOf(isl),st=stagesOf(a)[k-1],ch=choiceOf(sid,a.id,k);let s="open";
+  const seqOk=list=>{const j=list.indexOf(isl);return j<=0||passed(sid,a.id,list[j-1].id)};
+  if(!stageOpen(a,sid,k))s="fog";
+  else if(isl.sec==="route"){if(!seqOk(st.R))s="fog"}
+  else if(isl.sec==="wp1"||isl.sec==="wp2"){const w=isl.sec==="wp1"?1:2;
+    if(ch&&ch!==w)s="closed";else if(!ch||!forkOpen(a,sid,k))s="fog";else if(!seqOk(w===1?st.L1:st.L2))s="fog"}
+  else if(isl.sec==="sprint"){if(isl.after&&a.islands.some(x=>x.id===isl.after)&&!passed(sid,a.id,isl.after))s="fog"}
+  if(s==="open"&&p.locked)return"locked";
+  return s;
 }
-function goalReached(a,sid){const s=secs(a);if(!s.R.every(i=>isDone(sid,a.id,i.id)))return false;if(!s.fork)return true;
-  const c=choiceOf(sid,a.id);if(!c)return false;return (c===1?s.L1:s.L2).every(i=>isDone(sid,a.id,i.id))}
-function kidTarget(a,sid){const s=secs(a);if(goalReached(a,sid))return"ziel";
-  const r=s.R.find(i=>!passed(sid,a.id,i.id));if(r)return r.id;
-  if(s.fork){const c=choiceOf(sid,a.id);if(!c)return"fork";const l=(c===1?s.L1:s.L2).find(i=>!passed(sid,a.id,i.id));if(l)return l.id}
+function goalReached(a,sid){return stagesOf(a).every(st=>stageComplete(a,sid,st,i=>isDone(sid,a.id,i.id)))}
+function kidTarget(a,sid){if(goalReached(a,sid))return"ziel";
+  for(const st of stagesOf(a)){const r=st.R.find(i=>!passed(sid,a.id,i.id));if(r)return r.id;
+    if(st.fork){const c=choiceOf(sid,a.id,st.k);if(!c)return"fork_"+st.k;const l=(c===1?st.L1:st.L2).find(i=>!passed(sid,a.id,i.id));if(l)return l.id}}
   return"ziel"}
 const kidStars=(a,sid)=>a.islands.reduce((t,i)=>t+(isDone(sid,a.id,i.id)?(+i.stars||0):0),0);
-function maxStars(a){const s=secs(a);return sumStars(s.R)+Math.max(sumStars(s.L1),sumStars(s.L2))+sumStars(s.SP)}
-function pflicht(a){const s=secs(a);if(!s.fork)return sumStars(s.R);const x=sumStars(s.L1),y=sumStars(s.L2);return sumStars(s.R)+(x&&y?Math.min(x,y):x||y)}
+function maxStars(a){return stagesOf(a).reduce((t,st)=>t+sumStars(st.R)+Math.max(sumStars(st.L1),sumStars(st.L2))+sumStars(st.SP),0)}
+function pflicht(a){return stagesOf(a).reduce((t,st)=>{let v=sumStars(st.R);if(st.fork){const x=sumStars(st.L1),y=sumStars(st.L2);v+=x&&y?Math.min(x,y):x||y}return t+v},0)}
 const classSum=(a,c)=>c.students.reduce((t,s)=>t+kidStars(a,s.id),0);
 const classGoal=(a,c)=>Math.max(1,Math.round((+a.goalPerKid||pflicht(a)||1)*c.students.length));
 
@@ -437,51 +448,67 @@ function compass(x,y,r){return `<g transform="translate(${x},${y})" opacity=".55
   <text y="${-r-6}" text-anchor="middle" class="lbl sm" style="stroke-width:3px">N</text></g>`}
 
 function mapSvg(a,ctx){
-  const s=secs(a),W=1000,H=600,mx=80,mid=292;
-  const mw=Math.max(s.L1.length,s.L2.length,1);
-  const zc=s.fork?s.R.length+1+mw+1:s.R.length+1;
-  const dx=(W-2*mx)/zc,X=c=>mx+c*dx;
+  const ST=stagesOf(a),H=600,mx=80,mid=292,multi=ST.length>1;
+  const col={start:0},span=[],mainSeq=["start"];let c=0,prevEnd="start";
+  ST.forEach((st,ix)=>{st.startKey=prevEnd;const c0=c+1;
+    st.R.forEach(i=>{c++;col[i.id]=c;mainSeq.push(i.id)});
+    if(st.fork){c++;col["fork_"+st.k]=c;mainSeq.push("fork_"+st.k);const mw=Math.max(st.L1.length,st.L2.length,1);st.lane=[c,c+mw+1];c+=mw;
+      if(ix<ST.length-1){c++;col["join_"+st.k]=c;mainSeq.push("join_"+st.k);prevEnd="join_"+st.k}}
+    else if(st.R.length)prevEnd=st.R[st.R.length-1].id;
+    span.push([c0,Math.max(c0,c)])});
+  c++;col.ziel=c;mainSeq.push("ziel");const zc=c;
+  const W=Math.max(1000,Math.round(2*mx+zc*100)),dx=(W-2*mx)/zc,X=k=>mx+k*dx;
   const r=Math.max(24,Math.min(46,dx*.34)),rs=r*.72;
-  const P={start:{x:X(0),y:mid}};
-  s.R.forEach((i,k)=>P[i.id]={x:X(k+1),y:mid+(k%2?64:-64)});
-  let fc=0;
-  if(s.fork){fc=s.R.length+1;P.fork={x:X(fc),y:mid};
-    const span=X(zc)-X(fc);
-    const lane=(L,y0,sg)=>L.forEach((i,k)=>P[i.id]={x:X(fc)+span*(k+1)/(L.length+1),y:y0+(k%2?sg*24:0)});
-    lane(s.L1,mid-152,1);lane(s.L2,mid+152,-1)}
+  const P={start:{x:X(0),y:mid}};let gi=0;
+  ST.forEach(st=>{st.R.forEach(i=>{P[i.id]={x:X(col[i.id]),y:mid+(gi++%2?64:-64)}});
+    if(st.fork){P["fork_"+st.k]={x:X(col["fork_"+st.k]),y:mid};const [a0,a1]=st.lane,sp=X(a1)-X(a0);
+      const lane=(L,y0,sg)=>L.forEach((i,j)=>P[i.id]={x:X(a0)+sp*(j+1)/(L.length+1),y:y0+(j%2?sg*24:0)});
+      lane(st.L1,mid-152,1);lane(st.L2,mid+152,-1);
+      if(col["join_"+st.k]!=null)P["join_"+st.k]={x:X(col["join_"+st.k]),y:mid}}});
   P.ziel={x:X(zc),y:mid};
-  const groups={};s.SP.forEach(i=>{const k=P[i.after]?i.after:"start";(groups[k]||=[]).push(i)});
-  const seq=["start",...s.R.map(i=>i.id),s.fork?"fork":"ziel"],signs=[];
-  Object.entries(groups).forEach(([k,L])=>{const ix=seq.indexOf(k),a0=P[k],a1=P[seq[ix+1]]||P.ziel;
+  const groups={};ST.forEach(st=>st.SP.forEach(i=>{const k=(i.after&&P[i.after])?i.after:st.startKey;(groups[k]||=[]).push(i)}));
+  const signs=[];
+  Object.entries(groups).forEach(([k,L])=>{const ix=mainSeq.indexOf(k),a0=P[k],a1=P[mainSeq[ix+1]]||P.ziel;
     const sg={x:(a0.x+a1.x)/2,y:(a0.y+a1.y)/2};P["sg_"+k]=sg;signs.push(sg);
     const top=Math.max(88,Math.min(a0.y,a1.y)-122);
     L.forEach((i,j)=>{P[i.id]={x:sg.x+(j-(L.length-1)/2)*rs*3,y:top,sp:true,anchor:"sg_"+k}})});
 
   const kid=ctx.mode==="kid",sid=ctx.sid;
-  const st=i=>kid?status(a,sid,i):"neutral";
-  let out=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Schatzkarte ${esc(a.name)}">
+  const stat=i=>kid?status(a,sid,i):"neutral";
+  // Blickpunkt fürs Scrollen
+  let fx=0;
+  if(kid){const tk=kidTarget(a,sid);fx=(P[tk]||P.ziel).x}
+  let out=`<svg viewBox="0 0 ${W} ${H}" style="width:${(W/10).toFixed(1)}%" data-w="${W}" data-fx="__FX__" role="img" aria-label="Schatzkarte ${esc(a.name)}">
   <defs><filter id="fogb" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5"/></filter>
   <pattern id="hatch" width="14" height="14" patternUnits="userSpaceOnUse"><path d="M0 14 L14 0" stroke="#3D7F8C" stroke-width="1" opacity=".18"/></pattern></defs>
   <rect x="10" y="10" width="${W-20}" height="${H-20}" rx="10" fill="none" stroke="#B9A27C" stroke-width="2"/>
   <rect x="18" y="18" width="${W-36}" height="${H-36}" rx="6" fill="none" stroke="#D9C291" stroke-width="1"/>
   ${compass(70,H-70,34)}`;
-  const wv=rng(hash(a.id));for(let k=0;k<9;k++){const x=40+wv()*920,y=40+wv()*520;out+=`<path d="M${x.toFixed(0)},${y.toFixed(0)} q8,-6 16,0 t16,0" fill="none" stroke="#3D7F8C" stroke-width="2" opacity=".22"/>`}
+  const wv=rng(hash(a.id));for(let k=0;k<Math.round(9*W/1000);k++){const x=40+wv()*(W-80),y=40+wv()*520;out+=`<path d="M${x.toFixed(0)},${y.toFixed(0)} q8,-6 16,0 t16,0" fill="none" stroke="#3D7F8C" stroke-width="2" opacity=".22"/>`}
+  // Etappen
+  if(multi)ST.forEach((st,ix)=>{const [c0,c1]=span[ix],cx=(X(c0)+X(c1))/2;
+    out+=`<text x="${cx.toFixed(1)}" y="${H-26}" text-anchor="middle" class="lbl" style="font-family:var(--display);font-weight:400;font-size:24px;fill:#7A6247">Etappe ${st.k}${st.name?": "+esc(cut(st.name,26)):""}</text>`;
+    if(ix<ST.length-1){const xs=X(c1)+dx/2;out+=`<line x1="${xs.toFixed(1)}" y1="40" x2="${xs.toFixed(1)}" y2="${H-60}" stroke="#B9A27C" stroke-width="2" stroke-dasharray="4 10" opacity=".6"/>`}});
   // Wege
-  const main=[P.start,...s.R.map(i=>P[i.id])];
-  if(s.fork){main.push(P.fork);out+=`<path class="route" d="${smooth(main)}"/>`;
-    [[s.L1,1],[s.L2,2]].forEach(([L,k])=>{const dim=kid&&choiceOf(sid,a.id)&&choiceOf(sid,a.id)!==k;out+=`<path class="route" ${dim?'opacity=".2"':""} d="${smooth([P.fork,...L.map(i=>P[i.id]),P.ziel])}"/>`})}
-  else{main.push(P.ziel);out+=`<path class="route" d="${smooth(main)}"/>`}
-  s.SP.forEach(i=>{const p=P[i.id],an=P[p.anchor];out+=`<path class="route" style="opacity:.55" d="M${an.x.toFixed(1)},${(an.y-36).toFixed(1)} L${p.x.toFixed(1)},${p.y.toFixed(1)}"/>`});
+  let poly=[P.start];
+  ST.forEach(st=>{st.R.forEach(i=>poly.push(P[i.id]));
+    if(st.fork){const f=P["fork_"+st.k];poly.push(f);out+=`<path class="route" d="${smooth(poly)}"/>`;const end=P["join_"+st.k]||P.ziel;
+      const ch=kid?choiceOf(sid,a.id,st.k):null;
+      [[st.L1,1],[st.L2,2]].forEach(([L,w])=>{out+=`<path class="route" ${ch&&ch!==w?'opacity=".2"':""} d="${smooth([f,...L.map(i=>P[i.id]),end])}"/>`});
+      poly=[end]}});
+  if(poly[poly.length-1]!==P.ziel){poly.push(P.ziel);out+=`<path class="route" d="${smooth(poly)}"/>`}
+  ST.forEach(st=>st.SP.forEach(i=>{const p=P[i.id],an=P[p.anchor];out+=`<path class="route" style="opacity:.55" d="M${an.x.toFixed(1)},${(an.y-36).toFixed(1)} L${p.x.toFixed(1)},${p.y.toFixed(1)}"/>`}));
   signs.forEach(sg=>{const x=sg.x,y=sg.y;out+=`<g><rect x="${(x-2.5).toFixed(1)}" y="${(y-34).toFixed(1)}" width="5" height="34" fill="#6E4426" stroke="#40260F" stroke-width="1.5"/>
     <path d="M${(x-11).toFixed(1)},${(y-30).toFixed(1)} v-12 l11,-12 l11,12 v12 z" fill="#A8774A" stroke="#40260F" stroke-width="2"/>
     <path d="M${x.toFixed(1)},${(y-48).toFixed(1)} l-5,6 h3 v8 h4 v-8 h3 z" fill="#FBF5E4"/></g>`});
+  ST.forEach(st=>{const j=P["join_"+st.k];if(j)out+=`<g><circle cx="${j.x.toFixed(1)}" cy="${j.y}" r="11" fill="#C2923A" stroke="#40260F" stroke-width="2.5"/><circle cx="${j.x.toFixed(1)}" cy="${j.y}" r="4" fill="#FBF5E4"/></g>`});
   // Start
   out+=`<g><path d="${blob(P.start.x,P.start.y,r*.8,hash(a.id+"s"))}" fill="#E2C07F" stroke="#9C7438" stroke-width="2"/>
     <rect x="${P.start.x-4}" y="${P.start.y-r*.2}" width="${r*.9}" height="7" fill="#6E4426"/>
     <text x="${P.start.x}" y="${P.start.y+r+26}" text-anchor="middle" class="lbl">Hafen</text></g>`;
   // Inseln
   const islandG=(i)=>{
-    const p=P[i.id],rr=p.sp?rs:r,status_=st(i),seed=hash(i.id);
+    const p=P[i.id];if(!p)return"";const rr=p.sp?rs:r,status_=stat(i),seed=hash(i.id);
     const above=p.y<mid-1||(p.sp&&p.y<mid);
     const tapA=kid?` class="tap${status_==="closed"?" closed":""}" data-act="isl" data-id="${i.id}" role="button" tabindex="0" aria-label="${esc(i.name)}"`:status_==="closed"?` class="closed"`:"";
     let g=`<g${tapA}><circle cx="${p.x}" cy="${p.y}" r="${rr*1.45}" fill="transparent"/>
@@ -499,19 +526,19 @@ function mapSvg(a,ctx){
     else g+=`<text x="${p.x}" y="${p.y+rr+24}" text-anchor="middle" class="lbl${p.sp?" sm":""}${muted}">${nm}</text><text x="${p.x}" y="${p.y+rr+42}" text-anchor="middle" class="stx${status_==="done"||!kid?"":" off"}">${sx}</text>`;
     return g+`<title>${esc(i.name)}</title></g>`};
   a.islands.forEach(i=>out+=islandG(i));
-  // Weggabelung
-  if(s.fork){const p=P.fork,ch=kid?choiceOf(sid,a.id):null,canChoose=kid&&!ch&&forkOpen(a,sid);
-    out+=`<g${kid?` class="tap" data-act="fork" role="button" tabindex="0" aria-label="Weggabelung"`:""}><circle cx="${p.x}" cy="${p.y}" r="${r*1.4}" fill="transparent"/>
+  // Weggabelungen
+  ST.forEach(st=>{if(!st.fork)return;const p=P["fork_"+st.k],ch=kid?choiceOf(sid,a.id,st.k):null,canChoose=kid&&!ch&&forkOpen(a,sid,st.k);
+    out+=`<g${kid?` class="tap" data-act="fork" data-st="${st.k}" role="button" tabindex="0" aria-label="Weggabelung"`:""}><circle cx="${p.x}" cy="${p.y}" r="${r*1.4}" fill="transparent"/>
       ${canChoose?`<circle class="pulse" cx="${p.x}" cy="${p.y}" r="${r*1.05}" fill="none" stroke="#C2923A" stroke-width="4" stroke-dasharray="8 7"/>`:""}
       <rect x="${p.x-4}" y="${p.y-r*.9}" width="8" height="${r*1.8}" fill="#6E4426" stroke="#40260F" stroke-width="2"/>
       <path d="M${p.x+2},${p.y-r*.8} h${r*1.1} l${r*.25},${r*.22} l${-r*.25},${r*.22} h${-r*1.1}z" fill="${ch===1?"#C2923A":"#A8774A"}" stroke="#40260F" stroke-width="2"/>
       <path d="M${p.x+2},${p.y+r*.15} h${r*1.1} l${r*.25},${r*.22} l${-r*.25},${r*.22} h${-r*1.1}z" fill="${ch===2?"#C2923A":"#A8774A"}" stroke="#40260F" stroke-width="2"/>
       <text x="${p.x+r*.6}" y="${p.y-r*.52}" text-anchor="middle" style="font:900 ${Math.round(r*.36)}px var(--body);fill:#FBF5E4">1</text>
       <text x="${p.x+r*.6}" y="${p.y+r*.43}" text-anchor="middle" style="font:900 ${Math.round(r*.36)}px var(--body);fill:#FBF5E4">2</text>
-      <text x="${p.x}" y="${p.y+r+30}" text-anchor="middle" class="lbl sm">Weggabelung</text><title>Weggabelung</title></g>`;
-    const ln=(L,k,yy)=>{if(!L.length)return;const xs=L.map(i=>P[i.id].x);const cx=(Math.min(...xs)+Math.max(...xs))/2;
-      out+=`<text x="${cx}" y="${yy}" text-anchor="middle" class="lbl" style="font-family:var(--display);font-weight:400;font-size:24px;fill:#3D7F8C">${esc(cut(k===1?a.b1:a.b2,24))}</text>`};
-    ln(s.L1,1,mid-58);ln(s.L2,2,mid+72)}
+      ${(()=>{const cs=[st.L1,st.L2].filter(L=>L.length).map(L=>{const xs=L.map(i=>P[i.id].x);return (Math.min(...xs)+Math.max(...xs))/2-p.x});return !cs.length||Math.min(...cs)>150})()?`<text x="${p.x}" y="${p.y+r+30}" text-anchor="middle" class="lbl sm">Weggabelung</text>`:""}<title>Weggabelung</title></g>`;
+    const ln=(L,name,yy)=>{if(!L.length)return;const xs=L.map(i=>P[i.id].x);const cx=(Math.min(...xs)+Math.max(...xs))/2;
+      out+=`<text x="${cx}" y="${yy}" text-anchor="middle" class="lbl" style="font-family:var(--display);font-weight:400;font-size:24px;fill:#3D7F8C">${esc(cut(name,24))}</text>`};
+    ln(st.L1,a.b1||"Weg 1",mid-58);ln(st.L2,a.b2||"Weg 2",mid+72)});
   // Ziel
   {const p=P.ziel,rz=r*1.2,reached=kid&&goalReached(a,sid);
     out+=`<g${kid?` class="tap" data-act="ziel" role="button" tabindex="0" aria-label="Ziel"`:""}><circle cx="${p.x}" cy="${p.y}" r="${rz*1.4}" fill="transparent"/>
@@ -529,12 +556,12 @@ function mapSvg(a,ctx){
       if(fp.sp){const sg=P[fp.anchor];via=`${(sg.x-30).toFixed(1)},${(sg.y+8).toFixed(1)}`}}
     out+=`<g id="kship" data-via="${via}" data-tx="${to.x.toFixed(1)}" data-ty="${to.y.toFixed(1)}" style="transform:translate(${from.x.toFixed(1)}px,${from.y.toFixed(1)}px)">${shipSvg(0,0,sc)}</g>`}
   else if(ctx.mode==="class"&&a.goal!==false){const c=ctx.cls;const f=Math.min(1,classSum(a,c)/classGoal(a,c));
-    const pts=[P.start,...s.R.map(i=>P[i.id]),...(s.fork?[P.fork]:[]),P.ziel];
+    const pts=mainSeq.map(k=>P[k]).filter(Boolean);
     let L=0;const seg=[];for(let k=0;k<pts.length-1;k++){const d=Math.hypot(pts[k+1].x-pts[k].x,pts[k+1].y-pts[k].y);seg.push(d);L+=d}
     let want=f*L,k=0;while(k<seg.length-1&&want>seg[k]){want-=seg[k];k++}
     const t=seg[k]?Math.min(1,want/seg[k]):0,x=pts[k].x+(pts[k+1].x-pts[k].x)*t,y=pts[k].y+(pts[k+1].y-pts[k].y)*t;
-    out+=shipSvg(x,y-6,1.15)}
-  return out+"</svg>";
+    fx=x;out+=shipSvg(x,y-6,1.15)}
+  return out.replace("__FX__",fx.toFixed(0))+"</svg>";
 }
 
 const CHEST_ICON=`<svg viewBox="0 0 220 180" aria-hidden="true"><rect x="20" y="80" width="180" height="90" rx="8" fill="#8A5530" stroke="#2A1505" stroke-width="5"/><rect x="44" y="80" width="16" height="90" fill="#E1C06A"/><rect x="160" y="80" width="16" height="90" fill="#E1C06A"/><path d="M20 82 V60 Q20 22 110 22 Q200 22 200 60 V82 Z" fill="#9A6038" stroke="#2A1505" stroke-width="5"/><rect x="94" y="72" width="32" height="40" rx="5" fill="#E1C06A" stroke="#2A1505" stroke-width="3"/></svg>`;
@@ -684,25 +711,26 @@ function winScreen(a,k,isl){
   idle(14000);
 }
 function forkScreen(a,k){
-  const s=secs(a),sel=V.pick||0;
+  const ST=stagesOf(a),st=ST[(V.stage||1)-1]||ST[0],sel=V.pick||0;
   const card=(L,n,name)=>`<button class="way" aria-pressed="${sel===n}" data-act="pickWay" data-n="${n}"><span class="t">${esc(name)}</span>
     <span>${sumStars(L)} Sterne · ${L.length} ${L.length===1?"Insel":"Inseln"}</span><ul>${L.map(i=>`<li>${esc(i.name)}</li>`).join("")}</ul></button>`;
-  app.innerHTML=`<div class="bar"><button class="back" data-act="toMap">← Zur Karte</button></div><h2>Wähle deinen Weg</h2>
+  app.innerHTML=`<div class="bar"><button class="back" data-act="toMap">← Zur Karte</button></div><h2>${ST.length>1?`Etappe ${st.k}: `:""}Wähle deinen Weg</h2>
     <p class="sub">Du fährst danach nur diesen Weg. Wechseln kann nur ${esc(S.teacher)}.</p>
-    <div class="ways">${card(s.L1,1,a.b1||"Weg 1")}${card(s.L2,2,a.b2||"Weg 2")}</div>
+    <div class="ways">${card(st.L1,1,a.b1||"Weg 1")}${card(st.L2,2,a.b2||"Weg 2")}</div>
     <div class="btnrow"><button class="check" data-act="takeWay" ${sel?"":"disabled"}>Diesen Weg nehmen</button></div>`;idle(90000)}
 
 function tapIsland(id){
   const a=adv(),k=stu(),isl=a.islands.find(i=>i.id===id);if(!isl)return;
-  const st=status(a,k.id,isl),s=secs(a);
+  const st=status(a,k.id,isl),sk=stageOf(isl);
   if(st==="done")return toast("Diese Insel hast du schon geschafft.");
   if(st==="pending")return toast(`Erledigt. ${S.teacher} hakt noch ab.`);
   if(st==="locked")return toast(`Gesperrt. Frag ${S.teacher}.`);
   if(st==="closed")return toast("Du fährst den anderen Weg.");
   if(st==="fog"){
+    if(!stageOpen(a,k.id,sk))return toast(`Noch im Nebel. Schaffe erst Etappe ${sk-1}.`);
     if(isl.sec==="sprint"){const an=a.islands.find(i=>i.id===isl.after);return toast(`Noch im Nebel. Schaffe erst ${an?an.name:"die Insel davor"}.`)}
-    if((isl.sec==="wp1"||isl.sec==="wp2")&&!forkOpen(a,k.id))return toast("Noch im Nebel. Schaffe erst alle Grundlagen-Inseln.");
-    if((isl.sec==="wp1"||isl.sec==="wp2")&&!choiceOf(k.id,a.id))return toast("Wähle zuerst an der Weggabelung deinen Weg.");
+    if((isl.sec==="wp1"||isl.sec==="wp2")&&!forkOpen(a,k.id,sk))return toast("Noch im Nebel. Schaffe erst alle Grundlagen-Inseln.");
+    if((isl.sec==="wp1"||isl.sec==="wp2")&&!choiceOf(k.id,a.id,sk))return toast("Wähle zuerst an der Weggabelung deinen Weg.");
     return toast("Noch im Nebel. Schaffe erst die Insel davor.")}
   go({s:"isl",cls:V.cls,aid:V.aid,sid:V.sid,iid:id,val:"",res:null,tips:null,step:0,marks:null});
 }
@@ -713,12 +741,12 @@ const ACT={
   toAdv:()=>go({s:"adv",cls:V.cls,_:1,force:1}), pickKid:d=>go({s:"map",cls:V.cls,aid:V.aid,sid:d.id}),
   toNames, beamer:()=>go({s:"beamer",cls:V.cls,aid:V.aid}), toMap:()=>go({s:"map",cls:V.cls,aid:V.aid,sid:V.sid}),
   isl:d=>tapIsland(d.id),
-  fork:()=>{const a=adv(),k=stu();const ch=choiceOf(k.id,a.id);
+  fork:d=>{const a=adv(),k=stu(),sk=+d.st||1;const ch=choiceOf(k.id,a.id,sk);
     if(ch)return toast(`Du fährst den Weg „${ch===1?a.b1:a.b2}“.`);
-    if(!forkOpen(a,k.id))return toast("Schaffe erst alle Grundlagen-Inseln.");
-    go({...V,s:"fork",pick:0})},
+    if(!forkOpen(a,k.id,sk))return toast(stageOpen(a,k.id,sk)?"Schaffe erst alle Grundlagen-Inseln.":`Schaffe erst Etappe ${sk-1}.`);
+    go({...V,s:"fork",pick:0,stage:sk})},
   pickWay:d=>{V.pick=+d.n;render()},
-  takeWay:()=>{const a=adv(),k=stu();if(!V.pick)return;AP(k.id,a.id).choice=V.pick;save();toast("Gute Fahrt!");go({s:"map",cls:V.cls,aid:V.aid,sid:V.sid})},
+  takeWay:()=>{const a=adv(),k=stu();if(!V.pick)return;setChoice(k.id,a.id,V.stage||1,V.pick);save();toast("Gute Fahrt!");go({s:"map",cls:V.cls,aid:V.aid,sid:V.sid})},
   ziel:()=>{const a=adv(),k=stu();toast(goalReached(a,k.id)?"Du hast das Ziel erreicht!":"Hier wartet das Ziel. Fahr alle Inseln deines Weges ab.")},
   digit:d=>{const isl=adv().islands.find(i=>i.id===V.iid);if(V.val.length<String(isl.code).length){V.val+=d.d;render()}},
   del:()=>{V.val=V.val.slice(0,-1);render()}, clr:()=>{V.val="";render()}, checkCode,
@@ -771,11 +799,11 @@ function tOverview(){
   const L=S.adventures.filter(a=>a.classIds.includes(c.id));
   let h=classTabs();
   if(!L.length)return h+`<div class="empty">${esc(c.name)} hat noch kein Abenteuer. Ordne unter „Abenteuer“ eins zu.</div>`;
-  if(!L.find(a=>a.id===T.aid))T.aid=L[0].id;const a=L.find(x=>x.id===T.aid),s=secs(a);
+  if(!L.find(a=>a.id===T.aid))T.aid=L[0].id;const a=L.find(x=>x.id===T.aid),ST=stagesOf(a),multi=ST.length>1;
   if(L.length>1)h+=`<div class="tabs">${L.map(x=>`<button data-act="tAdv" data-id="${x.id}" aria-pressed="${x.id===a.id}">${esc(x.name)}${x.active?"":" (pausiert)"}</button>`).join("")}</div>`;
   const st=[...c.students].sort((x,y)=>x.name.localeCompare(y.name,"de"));
-  const cols=[...s.R,...s.L1,...s.L2,...s.SP];
-  const pend=st.filter(k=>cols.some(i=>peek(k.id,a.id,i.id)?.pending)).length;
+  const cols=[];ST.forEach(s=>{s.R.forEach(i=>cols.push({i}));if(s.fork)cols.push({way:s.k});[...s.L1,...s.L2,...s.SP].forEach(i=>cols.push({i}))});
+  const pend=st.filter(k=>a.islands.some(i=>peek(k.id,a.id,i.id)?.pending)).length;
   const grp=(n,t)=>n?`<th class="grp" colspan="${n}">${esc(t)}</th>`:"";
   const cell=(sid,i)=>{const p=peek(sid,a.id,i.id)||{},k=`${sid}|${i.id}`;
     if(p.done)return `<button class="c-ok" data-act="resetIsl" data-k="${k}" title="Zurücksetzen">✓${p.tries?`<span class="note"> ${p.tries}✗</span>`:""}</button>`;
@@ -784,17 +812,21 @@ function tOverview(){
     if(p.locked)return `<button class="c-lock" data-act="reset" data-k="${k}">gesperrt ↺</button>`;
     if(p.tries)return `<button class="c-try" data-act="reset" data-k="${k}" title="Fehlversuche zurücksetzen">${p.tries}✗</button>`;
     return `<button class="note" data-act="tick" data-k="${k}" title="Abhaken">–</button>`};
+  const stageCount=s=>s.R.length+(s.fork?1:0)+s.L1.length+s.L2.length+s.SP.length;
+  const row1=multi?`<tr><th></th>${ST.map(s=>stageCount(s)?`<th class="grp" colspan="${stageCount(s)}" style="background:#E7D19E">Etappe ${s.k}${s.name?": "+esc(cut(s.name,20)):""}</th>`:"").join("")}<th></th></tr>`:"";
+  const row2=`<tr><th></th>${ST.map(s=>`${grp(s.R.length,"Grundlagen")}${s.fork?`<th class="grp"></th>`:""}${grp(s.L1.length,a.b1||"Weg 1")}${grp(s.L2.length,a.b2||"Weg 2")}${grp(s.SP.length,"Sprinter")}`).join("")}<th class="grp"></th></tr>`;
+  const row3=`<tr><th>Name</th>${cols.map(x=>x.i?`<th title="${esc(x.i.name)}">${esc(cut(x.i.name,14))}</th>`:"<th>Weg</th>").join("")}<th>Sterne</th></tr>`;
   return h+`${pend?`<div class="infobar"><b>Kapitänskontrolle:</b> ${pend} ${pend===1?"Kind wartet":"Kinder warten"} auf dein „Heft ok“.</div>`:""}
   <div class="panel"><div class="row" style="justify-content:space-between"><h3 style="margin:0">${esc(c.name)} · ${esc(a.name)}: ${classSum(a,c)}${a.goal!==false?` von ${classGoal(a,c)}`:""} Sternen</h3>
     <div class="row"><button class="btn" data-act="toBeamer">Klassenkarte zeigen</button><button class="btn" data-act="exp">Als Tabelle sichern</button></div></div>
-  <p class="note">Tippe auf ein Feld: ✓ setzt die Insel zurück, „–“ hakt sie ab, „gesperrt“ und Fehlversuche werden zurückgesetzt. ↺ neben dem Namen setzt das ganze Abenteuer für dieses Kind zurück. Zurücksetzen und Abhaken brauchen zwei Tipps.</p>
-  <div class="tw"><table><thead><tr><th></th>${grp(s.R.length,"Grundlagen")}${s.fork?`<th class="grp"></th>`:""}${grp(s.L1.length,a.b1||"Weg 1")}${grp(s.L2.length,a.b2||"Weg 2")}${grp(s.SP.length,"Sprinter")}<th class="grp"></th></tr>
-  <tr><th>Name</th>${s.R.map(i=>`<th title="${esc(i.name)}">${esc(cut(i.name,14))}</th>`).join("")}${s.fork?"<th>Weg</th>":""}${[...s.L1,...s.L2,...s.SP].map(i=>`<th title="${esc(i.name)}">${esc(cut(i.name,14))}</th>`).join("")}<th>Sterne</th></tr></thead>
-  <tbody>${st.map(k=>{const ch=choiceOf(k.id,a.id);return `<tr><td>${esc(k.name)}${goalReached(a,k.id)?' <span class="c-ok" title="Ziel erreicht">⚑</span>':""} <button class="note" data-act="resetKid" data-k="${k.id}" title="Alles zurücksetzen" aria-label="${esc(k.name)} zurücksetzen">↺</button></td>${s.R.map(i=>`<td>${cell(k.id,i)}</td>`).join("")}
-    ${s.fork?`<td>${ch?`<button data-act="unchoose" data-k="${k.id}" title="Weg zurücksetzen">${ch}</button>`:'<span class="note">–</span>'}</td>`:""}
-    ${[...s.L1,...s.L2,...s.SP].map(i=>`<td>${cell(k.id,i)}</td>`).join("")}<td><b>${kidStars(a,k.id)}</b></td></tr>`}).join("")}</tbody></table></div>
+  <p class="note">Tippe auf ein Feld: ✓ setzt die Insel zurück, „–“ hakt sie ab, „gesperrt“ und Fehlversuche werden zurückgesetzt, „Weg“ löscht die Wahl an der Gabelung. ↺ neben dem Namen setzt das ganze Abenteuer für dieses Kind zurück. Zurücksetzen und Abhaken brauchen zwei Tipps.</p>
+  <div class="tw"><table><thead>${row1}${row2}${row3}</thead>
+  <tbody>${st.map(k=>`<tr><td>${esc(k.name)}${goalReached(a,k.id)?' <span class="c-ok" title="Ziel erreicht">⚑</span>':""} <button class="note" data-act="resetKid" data-k="${k.id}" title="Alles zurücksetzen" aria-label="${esc(k.name)} zurücksetzen">↺</button></td>
+    ${cols.map(x=>{if(x.i)return `<td>${cell(k.id,x.i)}</td>`;const ch=choiceOf(k.id,a.id,x.way);return `<td>${ch?`<button data-act="unchoose" data-k="${k.id}|${x.way}" title="Weg zurücksetzen">${ch}</button>`:'<span class="note">–</span>'}</td>`}).join("")}
+    <td><b>${kidStars(a,k.id)}</b></td></tr>`).join("")}</tbody></table></div>
   <p class="note" id="em"></p></div>${errorPanel(a,c)}`;
 }
+
 function errorPanel(a,c){
   const blocks=[];
   a.islands.filter(i=>i.type==="code").forEach(i=>{const by={};const n=String(i.code||"").length;
@@ -807,10 +839,10 @@ function errorPanel(a,c){
 }
 function tSolutions(){
   if(!S.adventures.length)return `<div class="empty">Noch kein Abenteuer.</div>`;
-  if(!S.adventures.find(a=>a.id===T.sol))T.sol=S.adventures[0].id;const a=S.adventures.find(x=>x.id===T.sol),s=secs(a);
+  if(!S.adventures.find(a=>a.id===T.sol))T.sol=S.adventures[0].id;const a=S.adventures.find(x=>x.id===T.sol),multi=stagesOf(a).length>1;
   const SECN={route:"Grundlagen",wp1:a.b1||"Weg 1",wp2:a.b2||"Weg 2",sprint:"Sprinter"},TYP={code:"Code-Insel",compare:"Vergleichs-Insel",teacher:"Lehrkraft-Insel"};
   const card=i=>{const c=String(i.code||""),w=trapWarnings(i);
-    return `<div class="panel sol"><h3>${esc(i.name)} <span class="tag">${esc(SECN[i.sec])}</span><span class="tag">${TYP[i.type]}</span><span class="tag">${"★".repeat(+i.stars||0)}</span></h3>
+    return `<div class="panel sol"><h3>${esc(i.name)} ${multi?`<span class="tag">Etappe ${stageOf(i)}</span>`:""}<span class="tag">${esc(SECN[i.sec])}</span><span class="tag">${TYP[i.type]}</span><span class="tag">${"★".repeat(+i.stars||0)}</span></h3>
     ${i.type==="code"?(c?`<div class="codeview">${[...c].map((d,k)=>`<span>${c.length>1?`<small>${LET[k]}</small>`:""}${d}</span>`).join("")}</div>`:`<p class="c-lock">Code fehlt.</p>`):""}
     ${(i.traps||[]).length?`<h4>Fallen</h4>${i.traps.map(t=>`<div class="err-row"><b>${LET[t.pos]}) ${esc(t.d)}</b><span>${esc(t.text)}</span></div>`).join("")}`:""}
     ${w.length?`<p class="c-lock">${w.map(esc).join(" · ")}</p>`:""}
@@ -820,15 +852,16 @@ function tSolutions(){
       <label class="addph" for="ph-${i.id}">+ Foto aufnehmen oder wählen</label><input type="file" id="ph-${i.id}" data-ph-add="${i.id}" accept="image/*" multiple style="display:none"></div></div>`};
   return `${S.adventures.length>1?`<div class="tabs">${S.adventures.map(x=>`<button data-act="tSol" data-id="${x.id}" aria-pressed="${x.id===a.id}">${esc(x.name)}</button>`).join("")}</div>`:""}
     <div class="infobar">Hier liegen alle Codes, Fallen und Lösungsfotos von „${esc(a.name)}“. Gut für dich und die Schulbegleitung. Die Fotos bleiben nur auf diesem iPad und kommen mit in die Sicherung.</div>
-    ${[...s.R,...s.L1,...s.L2,...s.SP].map(card).join("")}<p class="note" id="phm"></p>`;
+    ${stageIslands(a).map(card).join("")}<p class="note" id="phm"></p>`;
 }
 function importPanel(mode){
   const r=T.imp&&T.imp.mode===mode?T.imp:null;
   let out="";
   if(r){const p=r.parsed;
     out=`<div class="imp">${p.name&&mode==="new"?`<p><b>Abenteuer:</b> ${esc(p.name)}${p.goalText?` · Ziel: ${esc(p.goalText)}`:""}</p>`:""}
+      ${p.stageNames.length>1?`<p><b>${p.stageNames.length} Etappen:</b> ${p.stageNames.map((n,i)=>esc(n||"Etappe "+(i+1))).join(" · ")}</p>`:""}
       ${p.islands.length?`<p><b>${p.islands.length} ${p.islands.length===1?"Insel":"Inseln"} erkannt:</b></p><ul>${p.islands.map(i=>{const w=trapWarnings(i);
-        return `<li>${esc(i.name)} · ${i.type==="code"?`Code ${esc(i.code||"?")}`:i.type==="compare"?"Vergleich (Foto danach hinzufügen)":"Lehrkraft"} · ${i.stars} ★${i.traps.length?` · ${i.traps.length} ${i.traps.length===1?"Falle":"Fallen"}`:""}${i.sec!=="route"?` · ${({wp1:"Wahlpflicht 1",wp2:"Wahlpflicht 2",sprint:"Sprinter"})[i.sec]}`:""}${w.length?` <span class="bad">(${w.map(esc).join(", ")})</span>`:""}</li>`}).join("")}</ul>`:`<p class="bad">Keine INSEL-Zeile gefunden.</p>`}
+        return `<li>${p.stageNames.length>1?`E${i.stage} · `:""}${esc(i.name)} · ${i.type==="code"?`Code ${esc(i.code||"?")}`:i.type==="compare"?"Vergleich (Foto danach hinzufügen)":"Lehrkraft"} · ${i.stars} ★${i.traps.length?` · ${i.traps.length} ${i.traps.length===1?"Falle":"Fallen"}`:""}${i.sec!=="route"?` · ${({wp1:"Wahlpflicht 1",wp2:"Wahlpflicht 2",sprint:"Sprinter"})[i.sec]}`:""}${w.length?` <span class="bad">(${w.map(esc).join(", ")})</span>`:""}</li>`}).join("")}</ul>`:`<p class="bad">Keine INSEL-Zeile gefunden.</p>`}
       ${p.errors.length?`<ul class="bad">${p.errors.map(e=>`<li>${esc(e)}</li>`).join("")}</ul>`:""}
       ${p.islands.length?`<button class="btn pri" data-act="impGo">${mode==="new"?"Abenteuer anlegen":"Inseln hinzufügen"}</button>`:""}</div>`}
   return `<div class="panel"><h3>${mode==="new"?"Abenteuer aus Import-Text anlegen":"Inseln aus Import-Text hinzufügen"}</h3>
@@ -851,8 +884,8 @@ function tAdvList(){
 }
 function tEdit(){
   const a=S.adventures.find(x=>x.id===T.edit);if(!a){T.edit=null;return tAdvList()}
-  const s=secs(a);
-  const row=(i,list)=>{const k=list.indexOf(i);
+  const ST=stagesOf(a),multi=ST.length>1;
+  const row=(i,list)=>{const k=list.indexOf(i),s=ST[stageOf(i)-1];
     let ext="";
     let traps="";
     if(i.type==="code"){ext=`<input type="text" inputmode="numeric" data-if="code" data-id="${i.id}" value="${esc(i.code)}" placeholder="Code, z. B. 47291" class="${i.code?"":"miss"}" aria-label="Code">`;
@@ -870,8 +903,14 @@ function tEdit(){
       <select data-if="type" data-id="${i.id}" aria-label="Art"><option value="code" ${i.type==="code"?"selected":""}>Code-Insel</option><option value="compare" ${i.type==="compare"?"selected":""}>Vergleichs-Insel</option><option value="teacher" ${i.type==="teacher"?"selected":""}>Lehrkraft-Insel</option></select>
       <select data-if="stars" data-id="${i.id}" aria-label="Sterne">${[1,2,3,4,5].map(n=>`<option value="${n}" ${+i.stars===n?"selected":""}>${n} ★</option>`).join("")}</select>
       ${ext}<div class="ctl"><button class="btn sm" data-act="mvIsl" data-id="${i.id}" data-d="-1" ${k===0?"disabled":""} aria-label="Nach oben">↑</button><button class="btn sm" data-act="mvIsl" data-id="${i.id}" data-d="1" ${k===list.length-1?"disabled":""} aria-label="Nach unten">↓</button><button class="btn sm warn" data-act="delIsl" data-id="${i.id}" aria-label="Insel löschen">✕</button></div>${after}${traps}</div>`};
-  const sec=(key,title,note,cls)=>{const L=a.islands.filter(i=>i.sec===key);return `<div class="sec ${cls||""}"><h4>${title}</h4>${note?`<p class="note" style="margin:-4px 0 6px">${note}</p>`:""}
-    ${L.map(i=>row(i,L)).join("")}<div class="row" style="margin-top:8px"><button class="btn sm" data-act="addIsl" data-sec="${key}">+ Insel</button></div></div>`};
+  const sec=(st,key,title,note,cls)=>{const L=a.islands.filter(i=>i.sec===key&&stageOf(i)===st.k);return `<div class="sec ${cls||""}"><h4>${title}</h4>${note?`<p class="note" style="margin:-4px 0 6px">${note}</p>`:""}
+    ${L.map(i=>row(i,L)).join("")}<div class="row" style="margin-top:8px"><button class="btn sm" data-act="addIsl" data-sec="${key}" data-st="${st.k}">+ Insel</button></div></div>`};
+  const stageBox=st=>{const empty=!a.islands.some(i=>stageOf(i)===st.k);
+    const inner=`${sec(st,"route","Grundlagen",multi?"":"Die Hauptroute. Alle Kinder fahren sie.")}${sec(st,"wp1",esc(a.b1||"Weg 1"),"Wahlpflicht: An der Weggabelung entscheidet sich jedes Kind für einen Weg. Leer lassen, wenn es keine Wahl gibt.","wp")}${sec(st,"wp2",esc(a.b2||"Weg 2"),"","wp")}${sec(st,"sprint","Sprinter","Freiwillige Abstecher für Extra-Sterne. Sie zählen nicht für das Ziel.","sp")}`;
+    if(!multi)return inner;
+    return `<div class="stagebox"><div class="row" style="justify-content:space-between"><h3 style="margin:0">Etappe ${st.k}</h3>
+      <input type="text" data-sn="${st.k}" value="${esc(st.name)}" placeholder="Name der Etappe (freiwillig)" style="flex:1;max-width:380px" aria-label="Name der Etappe ${st.k}">
+      ${st.k===ST.length&&empty?`<button class="btn sm warn" data-act="delStage">Etappe entfernen</button>`:""}</div>${inner}</div>`};
   const ex=S.classes[0];
   return `<div class="row" style="margin-bottom:12px"><button class="back" data-act="endEdit">← Alle Abenteuer</button></div>
   <div class="panel"><h3>Abenteuer</h3><div class="fields">
@@ -887,11 +926,10 @@ function tEdit(){
     <p class="note">Die Kinder fahren immer vorwärts: Es ist nur die nächste Insel offen. Die Weggabelung kommt nach allen Grundlagen, Sprinter nach ihrer Abzweigung.</p>
     <h4>Klassen</h4><div class="row" style="gap:18px">${S.classes.length?S.classes.map(c=>`<label class="cb"><input type="checkbox" data-acl="${c.id}" ${a.classIds.includes(c.id)?"checked":""}> ${esc(c.name)}</label>`).join(""):'<span class="note">Lege zuerst unter „Klassen“ eine Klasse an.</span>'}</div></div>
   <div class="panel"><h3>Inseln</h3>
-    ${sec("route","Grundlagen","Die Hauptroute. Alle Kinder fahren sie.")}
-    <div class="sec wp"><h4>Wahlpflicht</h4><p class="note" style="margin:-4px 0 6px">An der Weggabelung entscheidet sich jedes Kind für einen Weg. Leer lassen, wenn es keine Wahl gibt.</p>
-      <div class="fields"><label>Name Weg 1<input type="text" data-af="b1" value="${esc(a.b1||"")}"></label><label>Name Weg 2<input type="text" data-af="b2" value="${esc(a.b2||"")}"></label></div></div>
-    ${sec("wp1",esc(a.b1||"Weg 1"),"","wp")}${sec("wp2",esc(a.b2||"Weg 2"),"","wp")}
-    ${sec("sprint","Sprinter","Freiwillige Abstecher für Extra-Sterne. Sie zählen nicht für das Ziel.","sp")}
+    <div class="fields"><label>Name Wahlpflicht-Weg 1<input type="text" data-af="b1" value="${esc(a.b1||"")}"></label><label>Name Wahlpflicht-Weg 2<input type="text" data-af="b2" value="${esc(a.b2||"")}"></label></div>
+    ${ST.map(stageBox).join("")}
+    <div class="row" style="margin-top:14px"><button class="btn" data-act="addStage">+ Etappe hinzufügen</button>
+      <span class="note">Etappen sind Abschnitte nacheinander, jede mit eigenen Grundlagen, Gabelung und Sprintern. Eine Etappe geht erst auf, wenn die vorige geschafft ist.</span></div>
     <p class="note" style="margin-top:12px"><b>Code-Insel:</b> Kinder tippen den Code von der Schatzkarte. <b>Vergleichs-Insel:</b> Kinder sehen dein Lösungsfoto und bestätigen „fertig verglichen“. <b>Lehrkraft-Insel:</b> Nur du hakst ab. Alle Codes und Fotos auf einen Blick findest du unter „Lösungen“.</p></div>
   ${importPanel("add")}
   <div class="panel"><h3>So sieht die Karte aus</h3><div class="map" id="preview">${mapSvg(a,{mode:"preview"})}</div></div>`;
@@ -965,6 +1003,7 @@ app.addEventListener("change",async e=>{
   const a=S.adventures.find(x=>x.id===T.edit);if(!a||V.s!=="teacher")return;
   if(t.dataset.af){const f=t.dataset.af;a[f]=t.type==="checkbox"?t.checked:f==="goalPerKid"?(parseInt(t.value,10)||0):t.value.trim();save();
     if(f==="b1"||f==="b2"||f==="goal")return render();refreshPreview(a);return}
+  if(t.dataset.sn){const k=+t.dataset.sn;a.stageNames=a.stageNames||[];while(a.stageNames.length<k)a.stageNames.push("");a.stageNames[k-1]=t.value.trim();save();refreshPreview(a);return}
   if(t.dataset.acl){const id=t.dataset.acl;a.classIds=t.checked?[...new Set([...a.classIds,id])]:a.classIds.filter(x=>x!==id);save();refreshPreview(a);return}
   if(t.dataset.if){const i=a.islands.find(x=>x.id===t.dataset.id);if(!i)return;const f=t.dataset.if;
     if(f==="traps"){const lines=t.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);const ok=lines.map(parseTrap);
@@ -973,7 +1012,7 @@ app.addEventListener("change",async e=>{
     if(f==="code")t.classList.toggle("miss",!i.code);
     save();if(f==="type")return render();refreshPreview(a)}
 });
-function refreshPreview(a){const p=getEl("preview");if(p)p.innerHTML=mapSvg(a,{mode:"preview"});const g=getEl("goalNote");if(g)g.innerHTML=goalNote(a)}
+function refreshPreview(a){const p=getEl("preview");if(p){const sl=p.scrollLeft;p.innerHTML=mapSvg(a,{mode:"preview"});p.scrollLeft=sl}const g=getEl("goalNote");if(g)g.innerHTML=goalNote(a)}
 const findP=k=>{const [sid,iid]=k.split("|");return {sid,iid,p:IP(sid,T.aid,iid)}};
 const TACT={
   setPin:()=>{const a=getEl("p1").value.trim(),b=getEl("p2").value.trim(),pm=getEl("pm");
@@ -985,10 +1024,10 @@ const TACT={
   delPh:(d,b)=>{if(!confirmInline(b,"?"))return;const isl=S.adventures.flatMap(a=>a.islands).find(i=>i.id===d.isl);if(isl)isl.photos=isl.photos.filter(x=>x!==d.id);save();gcPhotos();render()},
   impCheck:d=>{const text=getEl("imp-"+d.mode).value;T.imp={mode:d.mode,text,parsed:parseImport(text)};render()},
   impGo:()=>{const r=T.imp;if(!r)return;const p=r.parsed;let a;
-    if(r.mode==="new"){a={id:uid(),name:p.name||"Importiertes Abenteuer",classIds:T.cls?[T.cls]:[],active:true,seq:false,forkAfterBase:true,b1:p.b1||"Wahlpflicht 1",b2:p.b2||"Wahlpflicht 2",goalPerKid:0,goalText:p.goalText||"",islands:[]};S.adventures.unshift(a)}
-    else{a=S.adventures.find(x=>x.id===T.edit);if(!a)return;if(p.b1)a.b1=p.b1;if(p.b2)a.b2=p.b2;if(p.goalText&&!a.goalText)a.goalText=p.goalText}
+    if(r.mode==="new"){a={id:uid(),name:p.name||"Importiertes Abenteuer",classIds:T.cls?[T.cls]:[],active:true,seq:false,forkAfterBase:true,b1:p.b1||"Wahlpflicht 1",b2:p.b2||"Wahlpflicht 2",goalPerKid:0,goalText:p.goalText||"",islands:[],stageNames:p.stageNames.slice()};S.adventures.unshift(a)}
+    else{a=S.adventures.find(x=>x.id===T.edit);if(!a)return;a.stageNames=a.stageNames||[];p.stageNames.forEach((n,i)=>{if(n&&!a.stageNames[i])a.stageNames[i]=n});if(p.b1)a.b1=p.b1;if(p.b2)a.b2=p.b2;if(p.goalText&&!a.goalText)a.goalText=p.goalText}
     a.islands.push(...p.islands);
-    p.islands.forEach(i=>{if(i._after){const t=a.islands.find(x=>x.sec==="route"&&x.name.toLowerCase()===i._after.toLowerCase());i.after=t?t.id:""}delete i._after});
+    p.islands.forEach(i=>{if(i._after){const t=a.islands.find(x=>x.sec==="route"&&stageOf(x)===stageOf(i)&&x.name.toLowerCase()===i._after.toLowerCase())||a.islands.find(x=>x.sec==="route"&&x.name.toLowerCase()===i._after.toLowerCase());i.after=t?t.id:""}delete i._after});
     save();T.imp=null;T.edit=a.id;T.tab="adv";render();toast(`${p.islands.length} ${p.islands.length===1?"Insel":"Inseln"} übernommen.`)},
   copyPrompt:async(d,b)=>{const mode=b.parentElement.querySelector("[data-mode]").dataset.mode,m=getEl("cpm-"+mode);
     try{await navigator.clipboard.writeText(KI_VORLAGE);m.textContent="Kopiert. Füge sie in einen neuen Chat ein."}
@@ -1000,7 +1039,7 @@ const TACT={
   reject:d=>{const {p}=findP(d.k);p.pending=false;p.done=false;save();render()},
   reset:d=>{const {p}=findP(d.k);p.tries=0;p.locked=false;save();render()},
   tick:(d,b)=>{if(!confirmInline(b,"abhaken?"))return;const {p}=findP(d.k);p.done=true;p.at=Date.now();save();render()},
-  unchoose:(d,b)=>{if(!confirmInline(b,"Weg löschen?"))return;AP(d.k,T.aid).choice=null;save();render()},
+  unchoose:(d,b)=>{if(!confirmInline(b,"Weg löschen?"))return;const [sid,k]=d.k.split("|");setChoice(sid,T.aid,+k||1,null);save();render()},
   toBeamer:()=>{T.unlocked=false;go({s:"beamer",cls:T.cls,aid:T.aid})},
   exp:()=>exportCsv(),
   newAdv:()=>{const n=getEl("an").value.trim()||"Neues Abenteuer";const a={id:uid(),name:n,classIds:T.cls?[T.cls]:[],active:true,seq:false,forkAfterBase:true,b1:"Wahlpflicht 1",b2:"Wahlpflicht 2",goalPerKid:0,goalText:"",islands:[mkIsl("Insel 1","code",1,"route")]};
@@ -1010,8 +1049,11 @@ const TACT={
     b.islands.forEach(i=>{const o=i.id;i.id=uid();map[o]=i.id});b.islands.forEach(i=>{if(i.after)i.after=map[i.after]||""});
     S.adventures.splice(S.adventures.indexOf(a)+1,0,b);save();render();toast("Kopie angelegt. Ordne sie einer Klasse zu und schalte sie aktiv.")},
   delAdv:(d,b)=>{if(!confirmInline(b,"Wirklich löschen?"))return;S.adventures=S.adventures.filter(x=>x.id!==d.id);Object.values(S.progress).forEach(p=>delete p[d.id]);save();gcPhotos();render()},
-  addIsl:d=>{const a=S.adventures.find(x=>x.id===T.edit);a.islands.push(mkIsl("Neue Insel","code",1,d.sec));save();render()},
-  mvIsl:d=>{const a=S.adventures.find(x=>x.id===T.edit),i=a.islands.find(x=>x.id===d.id);const L=a.islands.filter(x=>x.sec===i.sec),k=L.indexOf(i),j=k+(+d.d);
+  addIsl:d=>{const a=S.adventures.find(x=>x.id===T.edit);a.islands.push(mkIsl("Neue Insel","code",1,d.sec,{stage:+d.st||1}));save();render()},
+  addStage:()=>{const a=S.adventures.find(x=>x.id===T.edit),n=stagesOf(a).length;a.stageNames=(a.stageNames||[]).slice(0,n);while(a.stageNames.length<n)a.stageNames.push("");a.stageNames.push("");
+    a.islands.push(mkIsl("Neue Insel","code",1,"route",{stage:n+1}));save();render();toast(`Etappe ${n+1} angelegt.`)},
+  delStage:(d,b)=>{if(!confirmInline(b,"entfernen?"))return;const a=S.adventures.find(x=>x.id===T.edit),n=stagesOf(a).length;a.stageNames=(a.stageNames||[]).slice(0,n-1);save();render()},
+  mvIsl:d=>{const a=S.adventures.find(x=>x.id===T.edit),i=a.islands.find(x=>x.id===d.id);const L=a.islands.filter(x=>x.sec===i.sec&&stageOf(x)===stageOf(i)),k=L.indexOf(i),j=k+(+d.d);
     if(j<0||j>=L.length)return;const A=a.islands.indexOf(i),B=a.islands.indexOf(L[j]);[a.islands[A],a.islands[B]]=[a.islands[B],a.islands[A]];save();render()},
   delIsl:(d,b)=>{if(!confirmInline(b,"löschen?"))return;const a=S.adventures.find(x=>x.id===T.edit);a.islands=a.islands.filter(x=>x.id!==d.id);a.islands.forEach(i=>{if(i.after===d.id)i.after=""});save();gcPhotos();render()},
   addClass:()=>{const name=getEl("cn").value.trim(),names=[...new Set(getEl("cl").value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean))],cm=getEl("cm");
@@ -1054,13 +1096,15 @@ async function saveFile(filename,data,el){
   catch(e){el.textContent="Sichern hat nicht geklappt.";return false}
 }
 async function exportCsv(){
-  const c=S.classes.find(x=>x.id===T.cls),a=S.adventures.find(x=>x.id===T.aid),s=secs(a),cols=[...s.R,...s.L1,...s.L2,...s.SP];
+  const c=S.classes.find(x=>x.id===T.cls),a=S.adventures.find(x=>x.id===T.aid),ST=stagesOf(a),cols=stageIslands(a),forks=ST.filter(s=>s.fork);
   const q=v=>`"${String(v).replace(/"/g,'""')}"`;
-  const lines=[["Name",...cols.map(i=>i.name),"Weg","Sterne"].map(q).join(";")];
-  [...c.students].sort((x,y)=>x.name.localeCompare(y.name,"de")).forEach(k=>{const ch=choiceOf(k.id,a.id);
-    lines.push([k.name,...cols.map(i=>{const p=peek(k.id,a.id,i.id);return p?.done?"geschafft":p?.pending?"Kontrolle offen":p?.locked?"gesperrt":p?.tries?p.tries+" Fehlversuche":""}),ch?(ch===1?a.b1:a.b2):"",kidStars(a,k.id)].map(q).join(";"))});
+  const lines=[["Name",...cols.map(i=>(ST.length>1?`E${stageOf(i)} `:"")+i.name),...forks.map(s=>ST.length>1?`Weg Etappe ${s.k}`:"Weg"),"Sterne"].map(q).join(";")];
+  [...c.students].sort((x,y)=>x.name.localeCompare(y.name,"de")).forEach(k=>{
+    lines.push([k.name,...cols.map(i=>{const p=peek(k.id,a.id,i.id);return p?.done?"geschafft":p?.pending?"Kontrolle offen":p?.locked?"gesperrt":p?.tries?p.tries+" Fehlversuche":""}),
+      ...forks.map(s=>{const ch=choiceOf(k.id,a.id,s.k);return ch?(ch===1?a.b1:a.b2):""}),kidStars(a,k.id)].map(q).join(";"))});
   await saveFile(`Kapitaens-Karte_${c.name}_${a.name}.csv`.replace(/[\\/:*?"<>|]/g,"-"),"﻿"+lines.join("\r\n"),getEl("em"));
 }
+
 async function exportAdvs(list){
   const photos={};for(const a of list)for(const i of a.islands)for(const id of i.photos||[]){if(!photos[id]){const v=await photo(id);if(v)photos[id]=v}}
   const d=new Date(),stamp=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
@@ -1075,12 +1119,14 @@ async function backup(){
   if(ok){S.lastBackup=Date.now();save();setTimeout(render,900)}
 }
 const baseRender=render;
-render=function(){baseRender();fillPhotos()};
+function scrollMaps(){document.querySelectorAll(".map").forEach(m=>{const s=m.querySelector("svg[data-fx]");if(!s||m.scrollWidth<=m.clientWidth+2)return;
+  const fx=+s.dataset.fx,W=+s.dataset.w;if(!fx)return;m.scrollLeft=Math.max(0,fx/W*s.getBoundingClientRect().width-m.clientWidth/2)})}
+render=function(){baseRender();fillPhotos();requestAnimationFrame(scrollMaps)};
 render();
 </script>
 <script>
 if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.serviceWorker.register("sw.js").catch(()=>{})})}
-window.APP_VERSION="20261117-1839";
+window.APP_VERSION="20261117-1915";
 </script>
 </body>
 </html>

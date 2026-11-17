@@ -1,5 +1,5 @@
-// Kapitäns-Karte: Offline-Speicher. Version 20261117-1839
-const CACHE="kapitaens-karte-20261117-1839";
+// Kapitäns-Karte: Offline-Speicher. Version 20261117-1915
+const CACHE="kapitaens-karte-20261117-1915";
 const FILES=['./', 'index.html', 'manifest.webmanifest', 'xlsx.full.min.js', 'icon-180.png', 'icon-192.png', 'icon-512.png', 'nunito-600.woff2', 'nunito-700.woff2', 'nunito-800.woff2', 'nunito-900.woff2', 'pirata-one-400.woff2'];
 self.addEventListener("install",e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting()))});
 self.addEventListener("activate",e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()))});
