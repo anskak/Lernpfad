@@ -319,8 +319,10 @@ function trapWarnings(i){const w=[];if(i.type!=="code")return w;const c=String(i
   if(!c)w.push("Code fehlt");
   (i.traps||[]).forEach(t=>{if(t.pos>=c.length)w.push(`Falle ${LET[t.pos]}) passt nicht zur Code-Länge`);else if(c[t.pos]===t.d)w.push(`Falle ${LET[t.pos]}) hat dieselbe Ziffer wie die Lösung`)});return w}
 function cleanImport(t){t=String(t||"").replace(/^\uFEFF/,"");
-  if(/%[0-9A-Fa-f]{2}/.test(t)&&(/%0A/i.test(t)||/%20/.test(t)||!/\n/.test(t))){
-    t=t.replace(/(%[0-9A-Fa-f]{2})+/g,m=>{try{return decodeURIComponent(m)}catch(e){return m}})}
+  for(let n=0;n<4&&/%[0-9A-Fa-f]{2}/.test(t);n++){const before=t;
+    t=t.replace(/(%[0-9A-Fa-f]{2})+/g,m=>{try{return decodeURIComponent(m)}catch(e){return m.replace(/%([0-9A-Fa-f]{2})/g,(x,hx)=>{const c=parseInt(hx,16);return c<128?String.fromCharCode(c):x})}});
+    if(t===before)break}
+  if(!/\n/.test(t)&&/\+[A-ZÄÖÜa-z]+:/.test(t))t=t.replace(/\+/g," ");
   return t.replace(/\r\n?/g,"\n")}
 function parseImport(txt){txt=cleanImport(txt);
   const out={name:"",goalText:"",b1:"",b2:"",islands:[],errors:[],stageNames:[]};let cur=null,stg=0;
@@ -967,6 +969,7 @@ function tSettings(){
     <p class="note">${ds===null?"Noch keine Sicherung gespeichert.":`Letzte Sicherung: vor ${ds} ${ds===1?"Tag":"Tagen"}.`}</p>
     <div class="row"><button class="btn pri" data-act="backup">Sicherung speichern</button><label class="btn" for="rf">Sicherung laden</label><input type="file" id="rf" accept=".json,application/json" style="display:none"></div>
     <p class="note" id="bm"></p></div>
+  <div class="panel"><h3>Version</h3><p class="note">${window.APP_VERSION?`Home-Bildschirm-App, Version ${window.APP_VERSION}`:"Testversion im Claude-Artefakt"}</p></div>
   <div class="panel"><h3>PIN ändern</h3><div class="row"><input type="password" inputmode="numeric" id="np" placeholder="Neue PIN"><button class="btn" data-act="savePin">Ändern</button></div><p class="note" id="sm"></p></div>`;
 }
 const getEl=id=>document.getElementById(id);
@@ -996,7 +999,8 @@ function bindTeacher(){
   const snd=getEl("snd");if(snd)snd.onchange=()=>{S.sound=snd.checked;save();if(S.sound)sfx("win")};
 }
 // Felder im Abenteuer-Editor
-app.addEventListener("input",e=>{const t=e.target;if(t.dataset.if==="code"){const v=t.value.replace(/\D/g,"").slice(0,12);if(v!==t.value)t.value=v}});
+app.addEventListener("input",e=>{const t=e.target;
+  if(t.id&&t.id.startsWith("imp-")&&/%[0-9A-Fa-f]{2}/.test(t.value)){const v=cleanImport(t.value);if(v!==t.value)t.value=v}if(t.dataset.if==="code"){const v=t.value.replace(/\D/g,"").slice(0,12);if(v!==t.value)t.value=v}});
 app.addEventListener("change",async e=>{
   const t=e.target;
   if(t.dataset.phAdd&&V.s==="teacher"){const isl=S.adventures.flatMap(a=>a.islands).find(i=>i.id===t.dataset.phAdd);const files=[...t.files];if(!isl||!files.length)return;
@@ -1131,7 +1135,7 @@ render();
 </script>
 <script>
 if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.serviceWorker.register("sw.js").catch(()=>{})})}
-window.APP_VERSION="20261117-1936";
+window.APP_VERSION="20261117-1941";
 </script>
 </body>
 </html>
