@@ -336,7 +336,7 @@ function parseImport(txt){txt=cleanImport(txt);
     if(k==="weg 1"&&!cur){out.b1=v;return} if(k==="weg 2"&&!cur){out.b2=v;return}
     if(!cur&&k!=="insel"&&!k.startsWith("etappe")&&out.islands.length&&stg){out.errors.push(`Zeile ${n+1}: „${m[1]}“ steht zwischen ETAPPE und der ersten INSEL-Zeile.`);return}
     if(k.startsWith("etappe")){stg++;out.stageNames[stg-1]=v;cur=null;return}
-    if(k==="insel"){cur=mkIsl(v||"Insel","code",1,"route",{stage:Math.max(1,stg)});out.islands.push(cur);return}
+    if(k==="insel"){cur=mkIsl(v||"Insel","code",1,"route",{_ex:stg});out.islands.push(cur);return}
     if(!cur){out.errors.push(`Zeile ${n+1}: „${m[1]}“ steht vor der ersten INSEL-Zeile.`);return}
     if(k==="sterne"){cur.stars=Math.max(1,Math.min(5,parseInt(v,10)||1))}
     else if(k==="code"){cur.code=v.replace(/\D/g,"");cur.type="code"}
@@ -347,6 +347,13 @@ function parseImport(txt){txt=cleanImport(txt);
     else if(k==="ab"){cur._after=v}
     else if(k==="falle"){const t=parseTrap(v);if(t)cur.traps.push(t);else out.errors.push(`Zeile ${n+1}: Falle bitte so schreiben: „c 7 = Übertrag vergessen“.`)}
     else out.errors.push(`Zeile ${n+1}: „${m[1]}“ kenne ich nicht.`)});
+  // Kapitel: neue ETAPPE-Zeile oder Grundlagen-Insel nach Wahlpflicht/Sprinter beginnt ein neues Kapitel
+  let kk=0,non=false,lastEx=null;const names=[];
+  out.islands.forEach(i=>{if(i._ex!==lastEx){kk++;non=false;lastEx=i._ex;if(i._ex)names[kk-1]=out.stageNames[i._ex-1]||""}
+    else if(i.sec==="route"&&non){kk++;non=false}
+    if(i.sec!=="route")non=true;i.stage=Math.max(1,kk);delete i._ex});
+  out.stageNames=Array.from({length:Math.max(0,kk)},(_,j)=>names[j]||"");
+  if(kk<=1&&!out.stageNames[0])out.stageNames=[];
   return out}
 const KI_VORLAGE=`Erstelle mir Material für meine „Kapitäns-Karte“ (Selbstkontrolle mit Zahlencode).
 
@@ -400,7 +407,9 @@ const sumStars=l=>l.reduce((t,i)=>t+(+i.stars||0),0);
 const passed=(sid,aid,iid)=>{const p=peek(sid,aid,iid);return !!(p&&(p.done||p.pending))};
 function stageComplete(a,sid,st,fn){fn=fn||(i=>passed(sid,a.id,i.id));if(!st.R.every(fn))return false;if(!st.fork)return true;
   const c=choiceOf(sid,a.id,st.k);if(!c)return false;return (c===1?st.L1:st.L2).every(fn)}
-function stageOpen(a,sid,k){if(k<=1)return true;return stageComplete(a,sid,stagesOf(a)[k-2])}
+const kidClass=sid=>S.classes.find(c=>c.students.some(s=>s.id===sid));
+const released=(a,sid,k)=>{if(!a.gate||k<=1)return true;const c=kidClass(sid);return !!c&&(+(a.released||{})[c.id]||1)>=k};
+function stageOpen(a,sid,k){if(k<=1)return true;return stageComplete(a,sid,stagesOf(a)[k-2])&&released(a,sid,k)}
 function forkOpen(a,sid,k){k=k||1;const st=stagesOf(a)[k-1];return !!st&&stageOpen(a,sid,k)&&st.R.every(i=>passed(sid,a.id,i.id))}
 function status(a,sid,isl){
   const p=peek(sid,a.id,isl.id)||{};
@@ -411,14 +420,16 @@ function status(a,sid,isl){
   else if(isl.sec==="route"){if(!seqOk(st.R))s="fog"}
   else if(isl.sec==="wp1"||isl.sec==="wp2"){const w=isl.sec==="wp1"?1:2;
     if(ch&&ch!==w)s="closed";else if(!ch||!forkOpen(a,sid,k))s="fog";else if(!seqOk(w===1?st.L1:st.L2))s="fog"}
-  else if(isl.sec==="sprint"){if(isl.after&&a.islands.some(x=>x.id===isl.after)&&!passed(sid,a.id,isl.after))s="fog"}
+  else if(isl.sec==="sprint"){if(st.fork){if(!stageComplete(a,sid,st))s="fog"}
+    else if(isl.after&&a.islands.some(x=>x.id===isl.after)&&!passed(sid,a.id,isl.after))s="fog"}
   if(s==="open"&&p.locked)return"locked";
   return s;
 }
 function goalReached(a,sid){return stagesOf(a).every(st=>stageComplete(a,sid,st,i=>isDone(sid,a.id,i.id)))}
-function kidTarget(a,sid){if(goalReached(a,sid))return"ziel";
-  for(const st of stagesOf(a)){const r=st.R.find(i=>!passed(sid,a.id,i.id));if(r)return r.id;
-    if(st.fork){const c=choiceOf(sid,a.id,st.k);if(!c)return"fork_"+st.k;const l=(c===1?st.L1:st.L2).find(i=>!passed(sid,a.id,i.id));if(l)return l.id}}
+function kidTarget(a,sid){if(goalReached(a,sid))return"ziel";let last="start";
+  for(const st of stagesOf(a)){if(!stageOpen(a,sid,st.k))return last;
+    const r=st.R.find(i=>!passed(sid,a.id,i.id));if(r)return r.id;if(st.R.length)last=st.R[st.R.length-1].id;
+    if(st.fork){const c=choiceOf(sid,a.id,st.k);if(!c)return"fork_"+st.k;const l=(c===1?st.L1:st.L2).find(i=>!passed(sid,a.id,i.id));if(l)return l.id;last="join_"+st.k}}
   return"ziel"}
 const kidStars=(a,sid)=>a.islands.reduce((t,i)=>t+(isDone(sid,a.id,i.id)?(+i.stars||0):0),0);
 function maxStars(a){return stagesOf(a).reduce((t,st)=>t+sumStars(st.R)+Math.max(sumStars(st.L1),sumStars(st.L2))+sumStars(st.SP),0)}
@@ -459,7 +470,7 @@ function mapSvg(a,ctx){
   ST.forEach((st,ix)=>{st.startKey=prevEnd;const c0=c+1;
     st.R.forEach(i=>{c++;col[i.id]=c;mainSeq.push(i.id)});
     if(st.fork){c++;col["fork_"+st.k]=c;mainSeq.push("fork_"+st.k);const mw=Math.max(st.L1.length,st.L2.length,1);st.lane=[c,c+mw+1];c+=mw;
-      if(ix<ST.length-1){c++;col["join_"+st.k]=c;mainSeq.push("join_"+st.k);prevEnd="join_"+st.k}}
+      if(ix<ST.length-1||st.SP.length){c++;col["join_"+st.k]=c;mainSeq.push("join_"+st.k);prevEnd="join_"+st.k;if(st.SP.length)c+=2}}
     else if(st.R.length)prevEnd=st.R[st.R.length-1].id;
     span.push([c0,Math.max(c0,c)])});
   c++;col.ziel=c;mainSeq.push("ziel");const zc=c;
@@ -472,18 +483,19 @@ function mapSvg(a,ctx){
       lane(st.L1,mid-152,1);lane(st.L2,mid+152,-1);
       if(col["join_"+st.k]!=null)P["join_"+st.k]={x:X(col["join_"+st.k]),y:mid}}});
   P.ziel={x:X(zc),y:mid};
-  const groups={};ST.forEach(st=>st.SP.forEach(i=>{const k=(i.after&&P[i.after])?i.after:st.startKey;(groups[k]||=[]).push(i)}));
+  const groups={};ST.forEach(st=>st.SP.forEach(i=>{const k=st.fork&&P["join_"+st.k]?"join_"+st.k:(i.after&&P[i.after])?i.after:st.startKey;(groups[k]||=[]).push(i)}));
   const signs=[];
   Object.entries(groups).forEach(([k,L])=>{const ix=mainSeq.indexOf(k),a0=P[k],a1=P[mainSeq[ix+1]]||P.ziel;
     const sg={x:(a0.x+a1.x)/2,y:(a0.y+a1.y)/2};P["sg_"+k]=sg;signs.push(sg);
     const top=Math.max(88,Math.min(a0.y,a1.y)-122);
-    L.forEach((i,j)=>{P[i.id]={x:sg.x+(j-(L.length-1)/2)*rs*3,y:top,sp:true,anchor:"sg_"+k}})});
+    const gap=k.startsWith("join_")?Math.max(rs*3,118):rs*3;
+    L.forEach((i,j)=>{P[i.id]={x:sg.x+(j-(L.length-1)/2)*gap,y:top+(k.startsWith("join_")&&j%2?44:0),sp:true,anchor:"sg_"+k}})});
 
   const kid=ctx.mode==="kid",sid=ctx.sid;
   const stat=i=>kid?status(a,sid,i):"neutral";
   // Blickpunkt fürs Scrollen
   let fx=0;
-  if(kid){const tk=kidTarget(a,sid);fx=(P[tk]||P.ziel).x}
+  if(kid){const tk=kidTarget(a,sid);fx=(P[tk]||P.start).x}
   let out=`<svg viewBox="0 0 ${W} ${H}" style="width:${(W/10).toFixed(1)}%" data-w="${W}" data-fx="__FX__" role="img" aria-label="Schatzkarte ${esc(a.name)}">
   <defs><filter id="fogb" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5"/></filter>
   <pattern id="hatch" width="14" height="14" patternUnits="userSpaceOnUse"><path d="M0 14 L14 0" stroke="#3D7F8C" stroke-width="1" opacity=".18"/></pattern></defs>
@@ -555,8 +567,8 @@ function mapSvg(a,ctx){
       <text x="${p.x}" y="${p.y+rz+30}" text-anchor="middle" class="lbl" style="font-family:var(--display);font-weight:400;font-size:28px">Ziel</text>
       ${ctx.mode==="class"&&a.goal!==false&&a.goalText?`<text x="${p.x}" y="${p.y+rz+54}" text-anchor="middle" class="lbl sm">${esc(cut(a.goalText,22))}</text>`:""}<title>Ziel</title></g>`}
   // Schiff
-  if(kid){const tk=kidTarget(a,sid),tp=P[tk]||P.ziel,tr=tk==="ziel"?r*1.2:r,sc=Math.max(.6,r/46);
-    const to={x:tp.x-tr-26,y:tp.y+tr*.55};let from=to;
+  if(kid){const tk=kidTarget(a,sid),tp=P[tk]||P.start,tr=tk==="ziel"?r*1.2:tk.startsWith("join_")?14:r,sc=Math.max(.6,r/46);
+    const to=tk.startsWith("join_")?{x:tp.x-12,y:tp.y+40}:{x:tp.x-tr-26,y:tp.y+tr*.55};let from=to;
     let via="";
     if(ctx.from&&P[ctx.from]){const fp=P[ctx.from],fr=fp.sp?rs:r;from={x:fp.x+fr*.3,y:fp.y+fr+14};
       if(fp.sp){const sg=P[fp.anchor];via=`${(sg.x-30).toFixed(1)},${(sg.y+8).toFixed(1)}`}}
@@ -733,7 +745,8 @@ function tapIsland(id){
   if(st==="locked")return toast(`Gesperrt. Frag ${S.teacher}.`);
   if(st==="closed")return toast("Du fährst den anderen Weg.");
   if(st==="fog"){
-    if(!stageOpen(a,k.id,sk))return toast(`Noch im Nebel. Schaffe erst Etappe ${sk-1}.`);
+    if(!stageOpen(a,k.id,sk)){const prev=stagesOf(a)[sk-2];return toast(prev&&stageComplete(a,k.id,prev)?`Etappe ${sk} ist noch nicht freigegeben. ${S.teacher} gibt sie frei.`:`Noch im Nebel. Schaffe erst Etappe ${sk-1}.`)}
+    if(isl.sec==="sprint"&&stagesOf(a)[sk-1].fork)return toast("Noch im Nebel. Schaffe erst eine Wahlpflicht-Insel.");
     if(isl.sec==="sprint"){const an=a.islands.find(i=>i.id===isl.after);return toast(`Noch im Nebel. Schaffe erst ${an?an.name:"die Insel davor"}.`)}
     if((isl.sec==="wp1"||isl.sec==="wp2")&&!forkOpen(a,k.id,sk))return toast("Noch im Nebel. Schaffe erst alle Grundlagen-Inseln.");
     if((isl.sec==="wp1"||isl.sec==="wp2")&&!choiceOf(k.id,a.id,sk))return toast("Wähle zuerst an der Weggabelung deinen Weg.");
@@ -822,6 +835,9 @@ function tOverview(){
   const row1=multi?`<tr><th></th>${ST.map(s=>stageCount(s)?`<th class="grp" colspan="${stageCount(s)}" style="background:#E7D19E">Etappe ${s.k}${s.name?": "+esc(cut(s.name,20)):""}</th>`:"").join("")}<th></th></tr>`:"";
   const row2=`<tr><th></th>${ST.map(s=>`${grp(s.R.length,"Grundlagen")}${s.fork?`<th class="grp"></th>`:""}${grp(s.L1.length,a.b1||"Weg 1")}${grp(s.L2.length,a.b2||"Weg 2")}${grp(s.SP.length,"Sprinter")}`).join("")}<th class="grp"></th></tr>`;
   const row3=`<tr><th>Name</th>${cols.map(x=>x.i?`<th title="${esc(x.i.name)}">${esc(cut(x.i.name,14))}</th>`:"<th>Weg</th>").join("")}<th>Sterne</th></tr>`;
+  if(multi&&a.gate){const rel=Math.min(ST.length,+(a.released||{})[c.id]||1);
+    h+=`<div class="panel"><h3 style="margin-bottom:6px">Freigabe für ${esc(c.name)}</h3><p class="note" style="margin:0 0 10px">Offen sind Etappe 1 bis ${rel}. Tippe auf eine Etappe, um sie (und alle davor) freizugeben. Tippst du auf eine frühere, nimmst du die späteren zurück.</p>
+      <div class="tabs" style="margin:0">${ST.map(s=>`<button data-act="release" data-k="${s.k}" aria-pressed="${s.k<=rel}">${s.k<=rel?"✓ ":""}Etappe ${s.k}${s.name?": "+esc(cut(s.name,18)):""}</button>`).join("")}</div></div>`}
   return h+`${pend?`<div class="infobar"><b>Kapitänskontrolle:</b> ${pend} ${pend===1?"Kind wartet":"Kinder warten"} auf dein „Heft ok“.</div>`:""}
   <div class="panel"><div class="row" style="justify-content:space-between"><h3 style="margin:0">${esc(c.name)} · ${esc(a.name)}: ${classSum(a,c)}${a.goal!==false?` von ${classGoal(a,c)}`:""} Sternen</h3>
     <div class="row"><button class="btn" data-act="toBeamer">Klassenkarte zeigen</button><button class="btn" data-act="exp">Als Tabelle sichern</button></div></div>
@@ -865,7 +881,7 @@ function importPanel(mode){
   let out="";
   if(r){const p=r.parsed;
     out=`<div class="imp">${p.name&&mode==="new"?`<p><b>Abenteuer:</b> ${esc(p.name)}${p.goalText?` · Ziel: ${esc(p.goalText)}`:""}</p>`:""}
-      ${p.stageNames.length>1?`<p><b>${p.stageNames.length} Etappen:</b> ${p.stageNames.map((n,i)=>esc(n||"Etappe "+(i+1))).join(" · ")}</p>`:""}
+      ${p.stageNames.length>1?`<p><b>${p.stageNames.length} Etappen erkannt:</b> ${p.stageNames.map((n,i)=>esc(n||"Etappe "+(i+1))).join(" · ")}. Jede weitere Etappe öffnet sich erst, wenn du sie in der Übersicht freigibst.</p>`:""}
       ${p.islands.length?`<p><b>${p.islands.length} ${p.islands.length===1?"Insel":"Inseln"} erkannt:</b></p><ul>${p.islands.map(i=>{const w=trapWarnings(i);
         return `<li>${p.stageNames.length>1?`E${i.stage} · `:""}${esc(i.name)} · ${i.type==="code"?`Code ${esc(i.code||"?")}`:i.type==="compare"?"Vergleich (Foto danach hinzufügen)":"Lehrkraft"} · ${i.stars} ★${i.traps.length?` · ${i.traps.length} ${i.traps.length===1?"Falle":"Fallen"}`:""}${i.sec!=="route"?` · ${({wp1:"Wahlpflicht 1",wp2:"Wahlpflicht 2",sprint:"Sprinter"})[i.sec]}`:""}${w.length?` <span class="bad">(${w.map(esc).join(", ")})</span>`:""}</li>`}).join("")}</ul>`:`<p class="bad">Keine INSEL-Zeile gefunden.</p>`}
       ${p.errors.length?`<ul class="bad">${p.errors.map(e=>`<li>${esc(e)}</li>`).join("")}</ul>`:""}
@@ -904,7 +920,7 @@ function tEdit(){
         <div class="phs">${i.photos.map(id=>`<div class="ph"><button data-act="zoomT" data-id="${id}" style="background:none;padding:0" aria-label="Foto groß"><img data-ph="${id}" alt="Lösungsfoto"></button><button class="x" data-act="delPh" data-isl="${i.id}" data-id="${id}" aria-label="Foto löschen">✕</button></div>`).join("")}
         <label class="addph" for="ph-${i.id}">+ Foto aufnehmen oder wählen</label><input type="file" id="ph-${i.id}" data-ph-add="${i.id}" accept="image/*" multiple style="display:none"></div></div>`}
     if(i.type==="teacher")ext=`<span class="note">Kinder können hier nichts eingeben. Du hakst in der Übersicht ab, z. B. für Plakat, Zeichnung oder Vortrag.</span>`;
-    const after=i.sec==="sprint"?`<label class="note" style="display:flex;gap:6px;align-items:center;grid-column:1/-1">erreichbar ab <select data-if="after" data-id="${i.id}"><option value="">Start</option>${s.R.map(r=>`<option value="${r.id}" ${i.after===r.id?"selected":""}>nach ${esc(r.name)}</option>`).join("")}</select></label>`:"";
+    const after=i.sec==="sprint"&&s&&s.fork?`<p class="note" style="grid-column:1/-1;margin:0">Zweigt nach der Zusammenführung ab und öffnet sich, sobald eine Wahlpflicht-Insel geschafft ist.</p>`:i.sec==="sprint"?`<label class="note" style="display:flex;gap:6px;align-items:center;grid-column:1/-1">erreichbar ab <select data-if="after" data-id="${i.id}"><option value="">Start</option>${s.R.map(r=>`<option value="${r.id}" ${i.after===r.id?"selected":""}>nach ${esc(r.name)}</option>`).join("")}</select></label>`:"";
     return `<div class="isl-row"><input type="text" data-if="name" data-id="${i.id}" value="${esc(i.name)}" aria-label="Name der Insel">
       <select data-if="type" data-id="${i.id}" aria-label="Art"><option value="code" ${i.type==="code"?"selected":""}>Code-Insel</option><option value="compare" ${i.type==="compare"?"selected":""}>Vergleichs-Insel</option><option value="teacher" ${i.type==="teacher"?"selected":""}>Lehrkraft-Insel</option></select>
       <select data-if="stars" data-id="${i.id}" aria-label="Sterne">${[1,2,3,4,5].map(n=>`<option value="${n}" ${+i.stars===n?"selected":""}>${n} ★</option>`).join("")}</select>
@@ -928,6 +944,7 @@ function tEdit(){
     <div class="row" style="margin-top:10px;gap:18px">
       <label class="cb"><input type="checkbox" data-af="active" ${a.active?"checked":""}> aktiv (Kinder sehen es)</label>
       <label class="cb"><input type="checkbox" data-af="chest" ${a.chest!==false?"checked":""}> Schatztruhe beim Code (öffnet sich, Münzen fliegen)</label>
+      ${ST.length>1?`<label class="cb"><input type="checkbox" data-af="gate" ${a.gate?"checked":""}> Neue Etappen erst nach meiner Freigabe öffnen</label>`:""}
 </div>
     <p class="note">Die Kinder fahren immer vorwärts: Es ist nur die nächste Insel offen. Die Weggabelung kommt nach allen Grundlagen, Sprinter nach ihrer Abzweigung.</p>
     <h4>Klassen</h4><div class="row" style="gap:18px">${S.classes.length?S.classes.map(c=>`<label class="cb"><input type="checkbox" data-acl="${c.id}" ${a.classIds.includes(c.id)?"checked":""}> ${esc(c.name)}</label>`).join(""):'<span class="note">Lege zuerst unter „Klassen“ eine Klasse an.</span>'}</div></div>
@@ -1034,7 +1051,7 @@ const TACT={
   delPh:(d,b)=>{if(!confirmInline(b,"?"))return;const isl=S.adventures.flatMap(a=>a.islands).find(i=>i.id===d.isl);if(isl)isl.photos=isl.photos.filter(x=>x!==d.id);save();gcPhotos();render()},
   impCheck:d=>{const text=cleanImport(getEl("imp-"+d.mode).value);T.imp={mode:d.mode,text,parsed:parseImport(text)};render()},
   impGo:()=>{const r=T.imp;if(!r)return;const p=r.parsed;let a;
-    if(r.mode==="new"){a={id:uid(),name:p.name||"Importiertes Abenteuer",classIds:T.cls?[T.cls]:[],active:true,seq:false,forkAfterBase:true,b1:p.b1||"Wahlpflicht 1",b2:p.b2||"Wahlpflicht 2",goalPerKid:0,goalText:p.goalText||"",islands:[],stageNames:p.stageNames.slice()};S.adventures.unshift(a)}
+    if(r.mode==="new"){a={id:uid(),name:p.name||"Importiertes Abenteuer",classIds:T.cls?[T.cls]:[],active:true,seq:false,forkAfterBase:true,b1:p.b1||"Wahlpflicht 1",b2:p.b2||"Wahlpflicht 2",goalPerKid:0,goalText:p.goalText||"",islands:[],stageNames:p.stageNames.slice(),gate:p.stageNames.length>1};S.adventures.unshift(a)}
     else{a=S.adventures.find(x=>x.id===T.edit);if(!a)return;a.stageNames=a.stageNames||[];p.stageNames.forEach((n,i)=>{if(n&&!a.stageNames[i])a.stageNames[i]=n});if(p.b1)a.b1=p.b1;if(p.b2)a.b2=p.b2;if(p.goalText&&!a.goalText)a.goalText=p.goalText}
     a.islands.push(...p.islands);
     p.islands.forEach(i=>{if(i._after){const t=a.islands.find(x=>x.sec==="route"&&stageOf(x)===stageOf(i)&&x.name.toLowerCase()===i._after.toLowerCase())||a.islands.find(x=>x.sec==="route"&&x.name.toLowerCase()===i._after.toLowerCase());i.after=t?t.id:""}delete i._after});
@@ -1080,6 +1097,7 @@ const TACT={
   saveName:()=>{S.teacher=getEl("tn").value.trim()||"deine Lehrkraft";save();toast("Gespeichert.")},
   savePin:()=>{const v=getEl("np").value.trim();if(!/^\d{4,}$/.test(v)){getEl("sm").textContent="Mindestens 4 Ziffern.";return}S.pin=v;save();getEl("sm").textContent="PIN geändert."},
   backup:()=>backup(),
+  release:d=>{const a=S.adventures.find(x=>x.id===T.aid);if(!a)return;a.released=a.released||{};a.released[T.cls]=+d.k;save();render();toast(`Freigegeben bis Etappe ${d.k}.`)},
   checkUpdate:async()=>{const m=getEl("upm");m.textContent=" Suche …";
     try{const r=await navigator.serviceWorker.getRegistration();if(r)await r.update();
       const res=await fetch("sw.js",{cache:"no-store"}),t=await res.text(),v=(t.match(/Version (\S+)/)||[])[1];
@@ -1125,7 +1143,7 @@ async function exportCsv(){
 async function exportAdvs(list){
   const photos={};for(const a of list)for(const i of a.islands)for(const id of i.photos||[]){if(!photos[id]){const v=await photo(id);if(v)photos[id]=v}}
   const d=new Date(),stamp=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-  const data={kind:"kapitaens-karte-abenteuer",v:1,exported:stamp,adventures:list.map(a=>({...a,classIds:[]})),photos};
+  const data={kind:"kapitaens-karte-abenteuer",v:1,exported:stamp,adventures:list.map(a=>({...a,classIds:[],released:{}})),photos};
   const name=(list.length===1?`Abenteuer_${list[0].name}_${stamp}`:`Abenteuer_alle_${stamp}`).replace(/[\\/:*?"<>|]/g,"-")+".json";
   await saveFile(name,JSON.stringify(data),getEl("axm")||{});
 }
@@ -1147,7 +1165,7 @@ if("serviceWorker" in navigator){
   navigator.serviceWorker.addEventListener("controllerchange",()=>{if(hadController)window.__updateReady=true});
   window.addEventListener("load",()=>{navigator.serviceWorker.register("sw.js",{updateViaCache:"none"}).then(reg=>{
     document.addEventListener("visibilitychange",()=>{if(!document.hidden)reg.update().catch(()=>{})})}).catch(()=>{})})}
-window.APP_VERSION="20261117-1945";
+window.APP_VERSION="20261117-2022";
 </script>
 </body>
 </html>
