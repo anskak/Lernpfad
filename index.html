@@ -318,7 +318,11 @@ const trapLine=t=>`${LET[t.pos]} ${t.d} = ${t.text}`;
 function trapWarnings(i){const w=[];if(i.type!=="code")return w;const c=String(i.code||"");
   if(!c)w.push("Code fehlt");
   (i.traps||[]).forEach(t=>{if(t.pos>=c.length)w.push(`Falle ${LET[t.pos]}) passt nicht zur Code-Länge`);else if(c[t.pos]===t.d)w.push(`Falle ${LET[t.pos]}) hat dieselbe Ziffer wie die Lösung`)});return w}
-function parseImport(txt){
+function cleanImport(t){t=String(t||"").replace(/^\uFEFF/,"");
+  if(/%[0-9A-Fa-f]{2}/.test(t)&&(/%0A/i.test(t)||/%20/.test(t)||!/\n/.test(t))){
+    t=t.replace(/(%[0-9A-Fa-f]{2})+/g,m=>{try{return decodeURIComponent(m)}catch(e){return m}})}
+  return t.replace(/\r\n?/g,"\n")}
+function parseImport(txt){txt=cleanImport(txt);
   const out={name:"",goalText:"",b1:"",b2:"",islands:[],errors:[],stageNames:[]};let cur=null,stg=0;
   const SEC={grundlagen:"route",route:"route",pflicht:"route","wahlpflicht 1":"wp1","weg 1":"wp1",wp1:"wp1","wahlpflicht 2":"wp2","weg 2":"wp2",wp2:"wp2",sprinter:"sprint",sprint:"sprint",abstecher:"sprint"};
   const ART={code:"code","code-insel":"code",vergleich:"compare",vergleichen:"compare","vergleichs-insel":"compare",lehrkraft:"teacher","lehrkraft-insel":"teacher"};
@@ -867,7 +871,7 @@ function importPanel(mode){
   return `<div class="panel"><h3>${mode==="new"?"Abenteuer aus Import-Text anlegen":"Inseln aus Import-Text hinzufügen"}</h3>
     <p class="note">Den Import-Text bekommst du aus dem KI-Chat, zusammen mit Rätselblatt und Lösungsblatt. Kopiere dafür die Vorlage in einen neuen Chat und ergänze Thema und Klasse.</p>
     <textarea id="imp-${mode}" placeholder="INSEL: Rätsel 1&#10;STERNE: 1&#10;CODE: 78439&#10;FALLE: c 5 = Übertrag vergessen">${r?esc(r.text):""}</textarea>
-    <div class="row" style="margin-top:8px"><button class="btn pri" data-act="impCheck" data-mode="${mode}">Prüfen</button><button class="btn" data-act="copyPrompt">Vorlage für den KI-Chat kopieren</button><span class="note" id="cpm-${mode}"></span></div>
+    <div class="row" style="margin-top:8px"><button class="btn pri" data-act="impCheck" data-mode="${mode}">Prüfen</button><label class="btn" for="imf-${mode}">Textdatei wählen</label><input type="file" id="imf-${mode}" data-impfile="${mode}" accept=".txt,.md,text/plain" style="display:none"><button class="btn" data-act="copyPrompt">Vorlage für den KI-Chat kopieren</button><span class="note" id="cpm-${mode}"></span></div>
     ${out}<textarea id="cpbox-${mode}" readonly style="display:none;margin-top:8px">${esc(KI_VORLAGE)}</textarea></div>`;
 }
 function tAdvList(){
@@ -1000,6 +1004,7 @@ app.addEventListener("change",async e=>{
     try{for(const f of files){const data=await compress(f),id=uid();await DB.put(id,data);PH[id]=data;isl.photos.push(id)}save();render();toast("Gespeichert.")}
     catch(err){if(m)m.textContent="Das Foto konnte nicht gespeichert werden. Ist der Speicher voll?";toast("Foto nicht gespeichert.")}
     return}
+  if(t.dataset.impfile&&V.s==="teacher"){const f=t.files[0];if(!f)return;try{const text=cleanImport(await f.text());T.imp={mode:t.dataset.impfile,text,parsed:parseImport(text)};render()}catch(err){toast("Die Datei konnte nicht gelesen werden.")}return}
   const a=S.adventures.find(x=>x.id===T.edit);if(!a||V.s!=="teacher")return;
   if(t.dataset.af){const f=t.dataset.af;a[f]=t.type==="checkbox"?t.checked:f==="goalPerKid"?(parseInt(t.value,10)||0):t.value.trim();save();
     if(f==="b1"||f==="b2"||f==="goal")return render();refreshPreview(a);return}
@@ -1022,7 +1027,7 @@ const TACT={
   tab:d=>{T.tab=d.t;T.edit=null;T.imp=null;render()},
   tSol:d=>{T.sol=d.id;render()}, zoomT:d=>zoom(d.id),
   delPh:(d,b)=>{if(!confirmInline(b,"?"))return;const isl=S.adventures.flatMap(a=>a.islands).find(i=>i.id===d.isl);if(isl)isl.photos=isl.photos.filter(x=>x!==d.id);save();gcPhotos();render()},
-  impCheck:d=>{const text=getEl("imp-"+d.mode).value;T.imp={mode:d.mode,text,parsed:parseImport(text)};render()},
+  impCheck:d=>{const text=cleanImport(getEl("imp-"+d.mode).value);T.imp={mode:d.mode,text,parsed:parseImport(text)};render()},
   impGo:()=>{const r=T.imp;if(!r)return;const p=r.parsed;let a;
     if(r.mode==="new"){a={id:uid(),name:p.name||"Importiertes Abenteuer",classIds:T.cls?[T.cls]:[],active:true,seq:false,forkAfterBase:true,b1:p.b1||"Wahlpflicht 1",b2:p.b2||"Wahlpflicht 2",goalPerKid:0,goalText:p.goalText||"",islands:[],stageNames:p.stageNames.slice()};S.adventures.unshift(a)}
     else{a=S.adventures.find(x=>x.id===T.edit);if(!a)return;a.stageNames=a.stageNames||[];p.stageNames.forEach((n,i)=>{if(n&&!a.stageNames[i])a.stageNames[i]=n});if(p.b1)a.b1=p.b1;if(p.b2)a.b2=p.b2;if(p.goalText&&!a.goalText)a.goalText=p.goalText}
@@ -1126,7 +1131,7 @@ render();
 </script>
 <script>
 if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.serviceWorker.register("sw.js").catch(()=>{})})}
-window.APP_VERSION="20261117-1915";
+window.APP_VERSION="20261117-1936";
 </script>
 </body>
 </html>
