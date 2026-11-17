@@ -594,7 +594,7 @@ const CHEST=`<svg class="chest" id="chest" viewBox="0 0 220 180" aria-hidden="tr
 
 /* ================= Kinder-Ansichten ================= */
 let V={s:"class"},idleT;
-function go(v){V=v;clearTimeout(idleT);render();window.scrollTo(0,0)}
+function go(v){if(window.__updateReady&&["class","adv","name"].includes(v.s)){location.reload();return}V=v;clearTimeout(idleT);render();window.scrollTo(0,0)}
 const cls=()=>S.classes.find(c=>c.id===V.cls);
 const advsFor=c=>S.adventures.filter(a=>a.active&&a.classIds.includes(c.id));
 const adv=()=>S.adventures.find(a=>a.id===V.aid);
@@ -969,7 +969,8 @@ function tSettings(){
     <p class="note">${ds===null?"Noch keine Sicherung gespeichert.":`Letzte Sicherung: vor ${ds} ${ds===1?"Tag":"Tagen"}.`}</p>
     <div class="row"><button class="btn pri" data-act="backup">Sicherung speichern</button><label class="btn" for="rf">Sicherung laden</label><input type="file" id="rf" accept=".json,application/json" style="display:none"></div>
     <p class="note" id="bm"></p></div>
-  <div class="panel"><h3>Version</h3><p class="note">${window.APP_VERSION?`Home-Bildschirm-App, Version ${window.APP_VERSION}`:"Testversion im Claude-Artefakt"}</p></div>
+  <div class="panel"><h3>Version</h3><p class="note">${window.APP_VERSION?`Home-Bildschirm-App, Version ${window.APP_VERSION}`:"Testversion im Claude-Artefakt"}</p>
+    ${window.APP_VERSION?`<button class="btn" data-act="checkUpdate">Nach Update suchen</button><span class="note" id="upm"></span>`:""}</div>
   <div class="panel"><h3>PIN ändern</h3><div class="row"><input type="password" inputmode="numeric" id="np" placeholder="Neue PIN"><button class="btn" data-act="savePin">Ändern</button></div><p class="note" id="sm"></p></div>`;
 }
 const getEl=id=>document.getElementById(id);
@@ -1079,6 +1080,13 @@ const TACT={
   saveName:()=>{S.teacher=getEl("tn").value.trim()||"deine Lehrkraft";save();toast("Gespeichert.")},
   savePin:()=>{const v=getEl("np").value.trim();if(!/^\d{4,}$/.test(v)){getEl("sm").textContent="Mindestens 4 Ziffern.";return}S.pin=v;save();getEl("sm").textContent="PIN geändert."},
   backup:()=>backup(),
+  checkUpdate:async()=>{const m=getEl("upm");m.textContent=" Suche …";
+    try{const r=await navigator.serviceWorker.getRegistration();if(r)await r.update();
+      const res=await fetch("sw.js",{cache:"no-store"}),t=await res.text(),v=(t.match(/Version (\S+)/)||[])[1];
+      if(v&&v!==window.APP_VERSION){m.textContent=` Neue Version ${v} gefunden. Die App lädt neu …`;
+        if(window.caches){for(const k of await caches.keys())await caches.delete(k)}setTimeout(()=>location.reload(),1500)}
+      else m.textContent=" Du hast die neueste Version."}
+    catch(e){m.textContent=" Keine Verbindung. Versuche es mit Internet noch einmal."}},
   expAll:()=>exportAdvs(S.adventures),
   expOne:d=>exportAdvs(S.adventures.filter(a=>a.id===d.id)),
 };
@@ -1134,8 +1142,12 @@ render=function(){baseRender();fillPhotos();requestAnimationFrame(scrollMaps)};
 render();
 </script>
 <script>
-if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.serviceWorker.register("sw.js").catch(()=>{})})}
-window.APP_VERSION="20261117-1941";
+if("serviceWorker" in navigator){
+  const hadController=!!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener("controllerchange",()=>{if(hadController)window.__updateReady=true});
+  window.addEventListener("load",()=>{navigator.serviceWorker.register("sw.js",{updateViaCache:"none"}).then(reg=>{
+    document.addEventListener("visibilitychange",()=>{if(!document.hidden)reg.update().catch(()=>{})})}).catch(()=>{})})}
+window.APP_VERSION="20261117-1945";
 </script>
 </body>
 </html>
