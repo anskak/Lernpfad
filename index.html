@@ -1,0 +1,1086 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Kapitäns-Karte</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Kapitäns-Karte">
+<meta name="theme-color" content="#5A3519">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<style>@font-face{font-family:"Nunito";font-weight:600;font-style:normal;font-display:swap;src:url("nunito-600.woff2") format("woff2")}@font-face{font-family:"Nunito";font-weight:700;font-style:normal;font-display:swap;src:url("nunito-700.woff2") format("woff2")}@font-face{font-family:"Nunito";font-weight:800;font-style:normal;font-display:swap;src:url("nunito-800.woff2") format("woff2")}@font-face{font-family:"Nunito";font-weight:900;font-style:normal;font-display:swap;src:url("nunito-900.woff2") format("woff2")}@font-face{font-family:"Pirata One";font-weight:400;font-style:normal;font-display:swap;src:url("pirata-one-400.woff2") format("woff2")}</style>
+<script src="xlsx.full.min.js"></script>
+<style>
+/* Eine Welt: Pergament-Seekarte unter einer Holzleiste, Messing für Codes und Schätze. Ein Bildschirm pro Schritt, große Tippflächen fürs iPad und den Beamer. */
+:root{
+  --parch:#F4E7C5; --parch-2:#E7D19E; --paper:#FBF5E4; --ink:#3A2716; --muted:#7A6247;
+  --wood:#6E4426; --wood-d:#40260F; --brass:#C2923A; --brass-l:#F0D78E; --sea:#3D7F8C; --sea-l:#C6E0D8;
+  --ok:#2E7A4C; --ok-soft:#DCEBCF; --bad:#B1372B; --bad-soft:#F6D8CD;
+  --display:"Pirata One",Georgia,serif; --body:"Nunito",ui-rounded,system-ui,sans-serif;
+  color-scheme:light;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{min-height:100%;margin:0}
+html{background:#E9D6A6}
+body{background:radial-gradient(ellipse at 50% 30%,#F8EDCF 0%,#F1E1B7 55%,#E2C88F 100%);color:var(--ink);font-family:var(--body);font-weight:700;
+  padding:0 0 calc(24px + env(safe-area-inset-bottom,0px));min-height:100vh}
+button,input,textarea,select{font:inherit;color:inherit}
+button{cursor:pointer;border:0;touch-action:manipulation}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid var(--brass);outline-offset:2px}
+.top{display:flex;align-items:center;gap:12px;padding:calc(10px + env(safe-area-inset-top,0px)) max(18px,env(safe-area-inset-right,0px)) 10px max(18px,env(safe-area-inset-left,0px));
+  background:linear-gradient(180deg,#7B4C2A,#5A3519 70%,#4A2A12);border-bottom:4px solid var(--brass);box-shadow:0 3px 10px rgba(60,30,10,.35);color:var(--brass-l)}
+.top h1{margin:0;font-family:var(--display);font-weight:400;font-size:32px;letter-spacing:.5px}
+.top .sp{flex:1}
+.ghost{background:rgba(255,240,200,.08);color:var(--brass-l);padding:8px 14px;border-radius:10px;font-size:15px;border:1px solid rgba(240,215,142,.35)}
+.ghost:hover{background:rgba(255,240,200,.18)}
+.screen{max-width:1180px;margin:0 auto;padding:16px max(16px,env(safe-area-inset-right,0px)) 0 max(16px,env(safe-area-inset-left,0px))}
+h2{font-family:var(--display);font-weight:400;font-size:44px;margin:4px 0 14px;text-wrap:balance;line-height:1.05}
+.sub{color:var(--muted);font-size:19px;margin:-6px 0 16px}
+.bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.bar .sp{flex:1}
+.grid{display:grid;gap:12px}
+.names{grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}
+.big{background:var(--paper);border:2px solid #CDB27A;border-radius:14px;padding:18px 14px;font-size:23px;font-weight:800;text-align:center;min-height:74px;box-shadow:0 2px 0 #CDB27A}
+.big:hover{border-color:var(--wood)}
+.big small{display:block;font-size:15px;color:var(--muted);font-weight:700;margin-top:4px}
+.back{background:rgba(110,68,38,.1);border-radius:12px;padding:10px 16px;font-size:17px;color:var(--wood-d)}
+.back:hover{background:rgba(110,68,38,.18)}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--wood-d);color:var(--brass-l);border-radius:999px;padding:8px 16px;font-size:20px;font-weight:900;font-variant-numeric:tabular-nums}
+.chip svg{width:22px;height:22px;fill:var(--brass-l)}
+.empty{color:var(--muted);font-size:19px;padding:40px 0;text-align:center;line-height:1.5}
+
+/* Karte */
+.map{background:var(--paper);border:3px solid var(--wood);border-radius:14px;box-shadow:inset 0 0 0 6px #EBD9AE,0 4px 14px rgba(60,30,10,.18);overflow:hidden}
+.map svg{display:block;width:100%;height:auto}
+.lbl{font:800 17px var(--body);fill:var(--ink);paint-order:stroke;stroke:var(--paper);stroke-width:6px;stroke-linejoin:round}
+.lbl.sm{font-size:15px}
+.lbl.muted{fill:#9A8466}
+.stx{font:900 15px var(--body);fill:var(--brass);paint-order:stroke;stroke:var(--paper);stroke-width:5px}
+.stx.off{fill:#BFAE8C}
+.tap{cursor:pointer}
+.tap:hover .sand{stroke:var(--wood-d);stroke-width:3}
+.closed{opacity:.32}
+.pulse{animation:pulse 1.8s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes pulse{0%,100%{opacity:.95;transform:scale(1)}50%{opacity:.25;transform:scale(1.12)}}
+.route{fill:none;stroke:var(--bad);stroke-width:3.5;stroke-dasharray:2 11;stroke-linecap:round;opacity:.75}
+.splink{fill:none;stroke:var(--wood);stroke-width:2.5;stroke-dasharray:1 8;stroke-linecap:round;opacity:.6}
+.wake{animation:bob 3s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes bob{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-4px) rotate(2deg)}}
+
+/* Klassenschatz */
+.treasure{display:flex;align-items:center;gap:14px;margin-top:14px;background:linear-gradient(180deg,#6E4426,#4F2F15);border-radius:14px;padding:12px 16px;color:var(--brass-l);border:2px solid var(--brass)}
+.treasure .ico{width:54px;flex:none}
+.treasure .txt{flex:1;min-width:0}
+.treasure .t1{font-size:18px;font-weight:900}
+.treasure .t2{font-size:15px;opacity:.85}
+.meter{height:20px;border-radius:999px;background:#2E1A0A;margin-top:8px;overflow:hidden;border:1px solid rgba(240,215,142,.4)}
+.meter i{display:block;height:100%;background:linear-gradient(90deg,#B8862F,#F3D27A 60%,#FFE9A8);border-radius:999px;transition:width 1s ease}
+.treasure.big{padding:20px 24px}
+.treasure.big .t1{font-size:30px}
+.treasure.big .t2{font-size:20px}
+.treasure.big .meter{height:32px}
+.treasure.big .ico{width:90px}
+
+/* Schloss */
+.lockbox{display:flex;flex-direction:column;align-items:center;gap:14px}
+.chest{width:210px;height:auto;overflow:visible}
+.chest .lid{transition:transform .8s cubic-bezier(.3,1.5,.5,1);transform-origin:20px 82px}
+.chest .gold,.chest .glow{opacity:0;transition:opacity .6s ease .35s}
+.chest.open .lid{transform:rotate(-24deg) translate(-4px,-30px)}
+.chest.open .gold,.chest.open .glow{opacity:1}
+.chest.shake{animation:shake .55s ease}
+@keyframes shake{0%,100%{transform:translateX(0)}15%{transform:translateX(-12px) rotate(-3deg)}30%{transform:translateX(10px) rotate(3deg)}45%{transform:translateX(-8px) rotate(-2deg)}60%{transform:translateX(6px) rotate(1deg)}80%{transform:translateX(-3px)}}
+.slots{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;padding:14px 16px 26px;background:linear-gradient(180deg,#D9B661,#B08532 45%,#8C6620);border-radius:18px;box-shadow:inset 0 2px 0 #F6E3A6,0 4px 10px rgba(60,30,10,.3)}
+.slot{width:76px;height:96px;border-radius:12px;border:3px solid #6B4C18;display:flex;align-items:center;justify-content:center;font-size:52px;font-weight:900;position:relative;color:#FBEFC9;
+  background:linear-gradient(180deg,#160D05 0%,#4A3320 20%,#5E422A 50%,#4A3320 80%,#160D05 100%);font-variant-numeric:tabular-nums}
+.slot.cur{box-shadow:0 0 0 4px #FFF2C4}
+.slot.ok{border-color:var(--ok);background:linear-gradient(180deg,#0C2414,#2E7A4C 50%,#0C2414)}
+.slot.bad{border-color:#FF8E7F;background:linear-gradient(180deg,#2A0A06,#B1372B 50%,#2A0A06);animation:blink .9s ease 2}
+@keyframes blink{50%{filter:brightness(1.5)}}
+.slot small{position:absolute;bottom:-25px;font-size:16px;color:#3B260C}
+.pad{display:grid;grid-template-columns:repeat(3,96px);gap:10px}
+.pad button{height:74px;border-radius:16px;background:var(--paper);border:2px solid #CDB27A;box-shadow:0 3px 0 #B9995C;font-size:34px;font-weight:900}
+.pad button:active{transform:translateY(2px);box-shadow:0 1px 0 #B9995C}
+.pad .wide{font-size:19px}
+.check{background:linear-gradient(180deg,#7B4C2A,#4F2F15);color:var(--brass-l);border:2px solid var(--brass);border-radius:16px;padding:16px 40px;font-size:25px;font-weight:900}
+.check:disabled{opacity:.35;cursor:default}
+.check.alt{background:var(--paper);color:var(--wood-d);border-color:#CDB27A}
+.msg{font-size:22px;min-height:30px;text-align:center;max-width:640px}
+.msg.bad{color:var(--bad)} .msg.ok{color:var(--ok)}
+.tries{color:var(--muted);font-size:17px}
+.stars{display:inline-flex;gap:4px;vertical-align:middle}
+.star{width:26px;height:26px;fill:var(--brass)}
+.star.off{fill:#CDBB93}
+
+/* Gewonnen */
+.win{text-align:center;padding:60px 10px 30px;position:relative}
+.win .h{font-family:var(--display);font-size:76px;margin:0;color:var(--wood-d)}
+.win .n{font-size:26px;color:var(--muted);margin:6px 0 18px}
+.win .stars{justify-content:center;gap:10px}
+.win .star{width:70px;height:70px;animation:pop .5s ease both}
+@keyframes pop{from{transform:scale(.2) rotate(-40deg);opacity:0}to{transform:scale(1);opacity:1}}
+.stage{position:relative;display:inline-block}
+.burst{position:absolute;left:50%;top:45%;width:0;height:0;pointer-events:none}
+.coin{position:absolute;left:-14px;top:-14px;width:28px;height:28px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#FFF4C2,#F2C94C 45%,#B8862F 80%);border:2px solid #8C6620;opacity:0;animation:fly 1.6s cubic-bezier(.2,.7,.4,1) var(--d) both}
+@keyframes fly{0%{transform:translate(0,0) scale(.3);opacity:0}12%{opacity:1}55%{transform:translate(var(--dx),var(--dy)) scale(1) rotate(var(--r))}100%{transform:translate(calc(var(--dx) * 1.35),calc(var(--dy) + 280px)) scale(.9) rotate(calc(var(--r) * 2));opacity:0}}
+.btnrow{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:22px}
+
+/* Vergleich, Weggabelung */
+.card{background:var(--paper);border:2px solid #CDB27A;border-radius:16px;padding:20px;max-width:720px;margin:0 auto}
+.card p{font-size:20px;line-height:1.45;margin:0 0 12px}
+.parts{display:grid;gap:10px;margin:16px 0}
+.part{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.part b{font-size:26px;width:40px}
+.tog{background:#fff;border:2px solid #CDB27A;border-radius:12px;padding:12px 18px;font-size:19px}
+.tog[aria-pressed="true"].y{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
+.tog[aria-pressed="true"].n{background:#FFF0C9;border-color:var(--brass);color:#7A5A1E}
+.ways{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+.way{background:var(--paper);border:3px solid #CDB27A;border-radius:18px;padding:20px;text-align:left;display:flex;flex-direction:column;gap:8px}
+.way[aria-pressed="true"]{border-color:var(--wood-d);box-shadow:0 0 0 4px var(--brass-l)}
+.way .t{font-family:var(--display);font-size:36px}
+.way ul{margin:0;padding-left:20px;font-size:17px;color:var(--muted)}
+.toast{position:fixed;left:50%;bottom:calc(26px + env(safe-area-inset-bottom,0px));transform:translateX(-50%) translateY(20px);background:var(--wood-d);color:var(--brass-l);padding:14px 22px;border-radius:14px;font-size:20px;opacity:0;transition:.25s;pointer-events:none;max-width:90vw;text-align:center;border:2px solid var(--brass);z-index:5}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* Lehrkraft */
+.panel{background:var(--paper);border:2px solid #D9C291;border-radius:14px;padding:18px;margin-bottom:14px}
+.panel h3{margin:0 0 12px;font-size:20px}
+.panel h4{margin:16px 0 8px;font-size:17px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.btn{background:#EEDFB9;border-radius:10px;padding:10px 14px;font-size:16px;color:var(--ink)}
+.btn:hover{background:#E5D2A2}
+.btn.pri{background:var(--wood-d);color:var(--brass-l)}
+.btn.warn{background:var(--bad-soft);color:var(--bad)}
+.btn.sm{padding:6px 10px;font-size:15px}
+input[type=text],input[type=password],input[type=number],textarea,select{background:#fff;border:2px solid #D9C291;border-radius:10px;padding:9px 11px;font-size:16px}
+textarea{width:100%;min-height:140px;resize:vertical;font-weight:600}
+label.cb{display:inline-flex;align-items:center;gap:8px;font-size:16px}
+label.cb input{width:22px;height:22px;accent-color:var(--wood)}
+.note{color:var(--muted);font-size:14px;font-weight:600}
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th,td{padding:7px 6px;border-bottom:1px solid #E3D2A9;text-align:center;white-space:nowrap}
+th{font-size:13px;color:var(--muted)}
+th.grp{font-size:13px;color:var(--wood-d);background:#F1E4C0;border-bottom:0}
+th:first-child,td:first-child{text-align:left}
+td button{background:transparent;border-radius:8px;padding:4px 8px;font-size:15px}
+td button:hover{background:#F1E4C0}
+.mini{background:#EEDFB9!important;border-radius:8px;padding:4px 8px;font-size:13px;margin:1px}
+.mini.ok{background:var(--ok-soft)!important;color:var(--ok)}
+.c-ok{color:var(--ok);font-weight:900} .c-lock{color:var(--bad)} .c-try{color:#9A6A12}
+.tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.tabs button{background:#EEDFB9;border-radius:10px;padding:10px 16px;font-size:17px}
+.tabs button[aria-pressed="true"]{background:var(--wood-d);color:var(--brass-l)}
+.warnbar{background:var(--bad-soft);color:var(--bad);border-radius:12px;padding:10px 14px;margin:0 0 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.infobar{background:#FFF0C9;color:#6B4C18;border-radius:12px;padding:10px 14px;margin:0 0 14px}
+.isl-row{display:grid;grid-template-columns:minmax(150px,1.6fr) 140px 90px minmax(170px,1.4fr) auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px dashed #E3D2A9}
+.isl-row input,.isl-row select{width:100%}
+.isl-row .ext{display:flex;gap:6px;align-items:center}
+.isl-row .ctl{display:flex;gap:4px}
+.sec{border-left:5px solid var(--brass);padding-left:12px;margin-top:16px}
+.sec.wp{border-color:var(--sea)}
+.sec.sp{border-color:#9AAE6A}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.fields label{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--muted)}
+.miss{border-color:var(--bad)!important}
+.isl-row details{grid-column:1/-1}
+.isl-row summary{cursor:pointer;color:var(--wood);font-size:15px}
+.isl-row details textarea{min-height:80px;margin-top:6px}
+.tips{list-style:none;padding:0;margin:0;display:grid;gap:6px;max-width:640px}
+.tips li{background:#FFF0C9;border:2px solid var(--brass);border-radius:12px;padding:10px 14px;font-size:20px;color:#5A3D0C}
+.phs{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}
+.ph{position:relative;background:#fff;border:2px solid #CDB27A;border-radius:12px;padding:4px;display:block}
+.ph img{display:block;height:150px;width:auto;max-width:280px;object-fit:contain;border-radius:8px;background:#F3EAD3}
+.phs.wide .ph img{height:260px;max-width:100%}
+.ph .x{position:absolute;top:-10px;right:-10px;background:var(--bad);color:#fff;border-radius:50%;width:30px;height:30px;font-size:16px}
+.addph{display:inline-flex;align-items:center;justify-content:center;height:150px;width:150px;border:2px dashed #CDB27A;border-radius:12px;color:var(--wood);font-size:16px;text-align:center;cursor:pointer;padding:10px}
+.codeview{display:flex;gap:6px;flex-wrap:wrap}
+.codeview span{background:var(--wood-d);color:var(--brass-l);border-radius:8px;padding:6px 10px;font-size:20px;font-weight:900;font-variant-numeric:tabular-nums}
+.codeview small{font-size:13px;opacity:.8;margin-right:3px}
+.sol h3{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.tag{font-size:13px;background:#EEDFB9;border-radius:999px;padding:3px 10px;color:var(--wood-d);font-weight:800}
+.imp ul{margin:6px 0;padding-left:20px}
+.imp .bad{color:var(--bad)}
+.err-row{display:flex;gap:10px;align-items:baseline;padding:4px 0;border-bottom:1px dashed #E3D2A9;flex-wrap:wrap}
+.err-row b{min-width:34px;font-variant-numeric:tabular-nums}
+.lightbox{position:fixed;inset:0;background:rgba(30,18,8,.92);z-index:10;display:none;flex-direction:column;align-items:center;justify-content:center;padding:calc(56px + env(safe-area-inset-top,0px)) 12px 12px}
+.lightbox.on{display:flex}
+.lightbox .lbwrap{overflow:auto;max-width:100%;max-height:100%}
+.lightbox img{max-width:100%;max-height:calc(100vh - 90px);display:block;cursor:zoom-in}
+.lightbox img.full{max-width:none;max-height:none;cursor:zoom-out}
+.lightbox .close{position:fixed;top:calc(10px + env(safe-area-inset-top,0px));right:14px;background:var(--brass-l);color:var(--wood-d);border-radius:12px;padding:10px 18px;font-size:19px;font-weight:900}
+.win2{display:grid;grid-template-columns:minmax(300px,430px) 1fr;gap:24px;align-items:center;padding-top:30px}
+.win2 .wl{position:relative}
+.win2 .chest{width:170px}
+.win2 .h{font-size:68px}
+.map.static{pointer-events:none}
+@media (max-width:900px){.win2{grid-template-columns:1fr}}
+@media (max-width:820px){.isl-row{grid-template-columns:1fr 1fr}.isl-row .ctl{grid-column:span 2}}
+@media (max-width:640px){.slot{width:52px;height:70px;font-size:36px}.pad{grid-template-columns:repeat(3,78px)}.pad button{height:62px}h2{font-size:34px}.win .h{font-size:54px}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.coin{display:none}}
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>Kapitäns-Karte</h1><span class="sp"></span>
+  <button class="ghost" id="teacherBtn" type="button">Lehrkraft</button>
+</div>
+<main class="screen" id="app" aria-live="polite"></main>
+<div class="toast" id="toast" role="status"></div>
+<div class="lightbox" id="lb" role="dialog" aria-label="Lösung groß"><button class="close" id="lbx" type="button">Schließen</button><div class="lbwrap"><img id="lbi" alt="Lösung"></div></div>
+
+<script>
+/* ================= Speicher ================= */
+const KEY="kapitaens-karte-v1";
+let canStore=true;
+const uid=()=>Math.random().toString(36).slice(2,10);
+function blank(){return {v:1,pin:"",maxTries:3,teacher:"deine Lehrkraft",checkRate:0.25,sound:false,lastBackup:0,classes:[],adventures:[],progress:{}}}
+function mkIsl(name,type,stars,sec,extra){return Object.assign({id:uid(),name,type,stars,sec,code:"",parts:3,hint:"",after:"",traps:[],photos:[]},extra||{})}
+function seed(){
+  const s=blank();
+  const c={id:uid(),name:"Beispielklasse",demo:true,students:["Möwe","Krake","Delfin","Seestern","Qualle","Robbe"].map(n=>({id:uid(),name:n}))};
+  s.classes.push(c);
+  const a1={id:uid(),name:"Kapitän Minus",classIds:[c.id],active:true,seq:false,forkAfterBase:true,b1:"Wahlpflicht 1",b2:"Wahlpflicht 2",goalPerKid:6,goalText:"5 Minuten Spielzeit",
+    islands:[mkIsl("Rätsel 1","code",1,"route",{code:"78439"}),mkIsl("Rätsel 2","code",2,"route",{code:"93670"}),mkIsl("Rätsel 3","code",3,"route",{code:"74715"})]};
+  a1.islands.push(mkIsl("Bonus","code",4,"sprint",{code:"495",after:a1.islands[2].id}));
+  const R=[mkIsl("Buch S. 112 Nr. 2","code",1,"route",{code:"4718"}),mkIsl("Buch S. 113 Nr. 5","compare",2,"route",{parts:4,hint:"Das Lösungsblatt liegt vorne am Pult."}),mkIsl("Heft: Erweitern","code",2,"route",{code:"30652",traps:[{pos:0,d:"8",text:"Nur den Zähler erweitert?"},{pos:2,d:"1",text:"Zähler und Nenner mit verschiedenen Zahlen erweitert?"}]})];
+  const a2={id:uid(),name:"Brüche (Lernplan)",classIds:[c.id],active:true,seq:false,forkAfterBase:true,b1:"Wahlpflicht 1",b2:"Wahlpflicht 2",goalPerKid:9,goalText:"Spielestunde",
+    islands:[...R,
+      mkIsl("S. 116 Nr. 9","code",2,"wp1",{code:"8264"}),mkIsl("S. 117 Nr. 12","compare",3,"wp1",{parts:3,hint:"Das Lösungsblatt liegt vorne am Pult."}),
+      mkIsl("S. 118 Nr. 14","code",3,"wp2",{code:"51907"}),mkIsl("Plakat: Brüche im Alltag","teacher",4,"wp2"),
+      mkIsl("Sprinter S. 115","code",2,"sprint",{code:"362",after:R[0].id}),mkIsl("Knobelei","compare",3,"sprint",{parts:2,after:R[2].id})]};
+  s.adventures.push(a2,a1);
+  const st=c.students, done=(sid,a,i)=>{((s.progress[sid]||={})[a.id]||={choice:null,isl:{}}).isl[i.id]={done:true,tries:0,locked:false,pending:false,at:Date.now()}};
+  done(st[0].id,a2,R[0]);done(st[0].id,a2,R[1]);done(st[1].id,a2,R[0]);done(st[2].id,a2,R[0]);done(st[2].id,a2,R[1]);done(st[2].id,a2,R[2]);
+  s.progress[st[2].id][a2.id].choice=1; done(st[2].id,a2,a2.islands[3]);
+  done(st[1].id,a1,a1.islands[0]);done(st[3].id,a1,a1.islands[0]);done(st[3].id,a1,a1.islands[1]);
+  return s;
+}
+function load(){
+  try{const raw=localStorage.getItem(KEY);
+    if(raw){const s=JSON.parse(raw);if(s&&Array.isArray(s.classes))return Object.assign(blank(),s)}
+    else return seed();
+  }catch(e){canStore=false}
+  return seed();
+}
+let S=load();
+function normalize(){S.adventures.forEach(a=>a.islands.forEach(i=>{i.traps=Array.isArray(i.traps)?i.traps:[];i.photos=Array.isArray(i.photos)?i.photos:[]}))}
+normalize();
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S));canStore=true}catch(e){canStore=false}}
+try{localStorage.setItem(KEY+"-t","1");localStorage.removeItem(KEY+"-t")}catch(e){canStore=false}
+try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
+if(canStore&&!localStorage.getItem(KEY))save();
+
+/* ================= Helfer ================= */
+const app=document.getElementById("app");
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const cut=(s,n)=>s.length>n?s.slice(0,n-1)+"…":s;
+function hash(s){let h=2166136261;for(const ch of String(s)){h^=ch.charCodeAt(0);h=Math.imul(h,16777619)}return h>>>0}
+function rng(seed){let t=seed;return()=>{t+=0x6D2B79F5;let r=Math.imul(t^t>>>15,1|t);r^=r+Math.imul(r^r>>>7,61|r);return((r^r>>>14)>>>0)/4294967296}}
+const STAR='<path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3 6.1 20.6l1.3-6.6L2.5 9.4l6.6-.8z"/>';
+const starSvg=(off,delay)=>`<svg class="star${off?" off":""}" viewBox="0 0 24 24" aria-hidden="true"${delay!=null?` style="animation-delay:${delay}ms"`:""}>${STAR}</svg>`;
+const starsHtml=(n,off)=>`<span class="stars" aria-label="${n} Sterne">${Array.from({length:n},()=>starSvg(off)).join("")}</span>`;
+const LET="abcdefghijklmnop";
+let toastT;
+function toast(t){const el=document.getElementById("toast");el.textContent=t;el.classList.add("on");clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove("on"),2600)}
+function confirmInline(btn,txt){if(btn.dataset.armed)return true;btn.dataset.armed="1";const old=btn.innerHTML;btn.textContent=txt;setTimeout(()=>{if(btn.isConnected){delete btn.dataset.armed;btn.innerHTML=old}},3000);return false}
+
+/* ================= Lösungsfotos (nur lokal, IndexedDB) ================= */
+const DB={p:null,
+  open(){return this.p||(this.p=new Promise((res,rej)=>{try{const r=indexedDB.open("kapitaens-karte",1);r.onupgradeneeded=()=>r.result.createObjectStore("photos");r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}catch(e){rej(e)}}))},
+  async tx(mode,fn){const d=await this.open();return new Promise((res,rej)=>{const t=d.transaction("photos",mode),st=t.objectStore("photos");const r=fn(st);t.oncomplete=()=>res(r&&"result" in r?r.result:undefined);t.onerror=()=>rej(t.error)})},
+  put(id,v){return this.tx("readwrite",s=>s.put(v,id))}, get(id){return this.tx("readonly",s=>s.get(id))},
+  del(id){return this.tx("readwrite",s=>s.delete(id))}, keys(){return this.tx("readonly",s=>s.getAllKeys())}};
+const PH={};
+async function photo(id){if(PH[id])return PH[id];try{const v=await DB.get(id);if(v)PH[id]=v;return v}catch(e){return null}}
+function fillPhotos(){document.querySelectorAll("img[data-ph]:not([src])").forEach(async img=>{const v=await photo(img.dataset.ph);if(v)img.src=v;else img.alt="Foto fehlt"})}
+async function compress(file){const url=URL.createObjectURL(file);try{
+  const img=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=url});
+  const m=1800,sc=Math.min(1,m/Math.max(img.naturalWidth,img.naturalHeight)),c=document.createElement("canvas");
+  c.width=Math.round(img.naturalWidth*sc);c.height=Math.round(img.naturalHeight*sc);const g=c.getContext("2d");g.fillStyle="#fff";g.fillRect(0,0,c.width,c.height);g.drawImage(img,0,0,c.width,c.height);
+  return c.toDataURL("image/jpeg",.8)}finally{URL.revokeObjectURL(url)}}
+async function gcPhotos(){try{const used=new Set();S.adventures.forEach(a=>a.islands.forEach(i=>(i.photos||[]).forEach(p=>used.add(p))));
+  for(const k of await DB.keys())if(!used.has(k)){await DB.del(k);delete PH[k]}}catch(e){}}
+const lb=document.getElementById("lb"),lbi=document.getElementById("lbi");
+async function zoom(id){lbi.removeAttribute("src");lbi.classList.remove("full");lb.classList.add("on");const v=await photo(id);if(v)lbi.src=v}
+document.getElementById("lbx").onclick=()=>lb.classList.remove("on");
+lbi.onclick=()=>lbi.classList.toggle("full");
+
+/* ================= Fallen und Import ================= */
+function parseTrap(line){const m=String(line).trim().match(/^([a-p]|\d{1,2})\s*[)\-:.]?\s*(\d)\s*[=:]\s*(.+)$/i);if(!m)return null;
+  const pos=/\d/.test(m[1])?parseInt(m[1],10)-1:LET.indexOf(m[1].toLowerCase());return pos<0?null:{pos,d:m[2],text:m[3].trim()}}
+const trapLine=t=>`${LET[t.pos]} ${t.d} = ${t.text}`;
+function trapWarnings(i){const w=[];if(i.type!=="code")return w;const c=String(i.code||"");
+  if(!c)w.push("Code fehlt");
+  (i.traps||[]).forEach(t=>{if(t.pos>=c.length)w.push(`Falle ${LET[t.pos]}) passt nicht zur Code-Länge`);else if(c[t.pos]===t.d)w.push(`Falle ${LET[t.pos]}) hat dieselbe Ziffer wie die Lösung`)});return w}
+function parseImport(txt){
+  const out={name:"",goalText:"",b1:"",b2:"",islands:[],errors:[]};let cur=null;
+  const SEC={grundlagen:"route",route:"route",pflicht:"route","wahlpflicht 1":"wp1","weg 1":"wp1",wp1:"wp1","wahlpflicht 2":"wp2","weg 2":"wp2",wp2:"wp2",sprinter:"sprint",sprint:"sprint",abstecher:"sprint"};
+  const ART={code:"code","code-insel":"code",vergleich:"compare",vergleichen:"compare","vergleichs-insel":"compare",lehrkraft:"teacher","lehrkraft-insel":"teacher"};
+  String(txt).replace(/```[a-z]*/gi,"").split(/\r?\n/).forEach((raw,n)=>{const line=raw.trim();if(!line||line.startsWith("#"))return;
+    const m=line.match(/^([A-Za-zÄÖÜäöüß\-]+(?:\s\d)?)\s*:\s*(.*)$/);
+    if(!m){out.errors.push(`Zeile ${n+1} verstehe ich nicht: „${cut(line,40)}“`);return}
+    const k=m[1].toLowerCase(),v=m[2].trim();
+    if(k==="abenteuer"){out.name=v;return} if(k==="ziel"||k==="belohnung"){out.goalText=v;return}
+    if(k==="weg 1"&&!cur){out.b1=v;return} if(k==="weg 2"&&!cur){out.b2=v;return}
+    if(k==="insel"){cur=mkIsl(v||"Insel","code",1,"route");out.islands.push(cur);return}
+    if(!cur){out.errors.push(`Zeile ${n+1}: „${m[1]}“ steht vor der ersten INSEL-Zeile.`);return}
+    if(k==="sterne"){cur.stars=Math.max(1,Math.min(5,parseInt(v,10)||1))}
+    else if(k==="code"){cur.code=v.replace(/\D/g,"");cur.type="code"}
+    else if(k==="art"){const t=ART[v.toLowerCase()];if(t)cur.type=t;else out.errors.push(`Zeile ${n+1}: Art „${v}“ kenne ich nicht (Code, Vergleich, Lehrkraft).`)}
+    else if(k==="abschnitt"||k==="bereich"){const t=SEC[v.toLowerCase()];if(t)cur.sec=t;else out.errors.push(`Zeile ${n+1}: Abschnitt „${v}“ kenne ich nicht (Grundlagen, Wahlpflicht 1, Wahlpflicht 2, Sprinter).`)}
+    else if(k==="teile"){cur.parts=Math.max(1,Math.min(16,parseInt(v,10)||1))}
+    else if(k==="hinweis"){cur.hint=v}
+    else if(k==="ab"){cur._after=v}
+    else if(k==="falle"){const t=parseTrap(v);if(t)cur.traps.push(t);else out.errors.push(`Zeile ${n+1}: Falle bitte so schreiben: „c 7 = Übertrag vergessen“.`)}
+    else out.errors.push(`Zeile ${n+1}: „${m[1]}“ kenne ich nicht.`)});
+  return out}
+const KI_VORLAGE=`Erstelle mir Material für meine „Kapitäns-Karte“ (Selbstkontrolle mit Zahlencode).
+
+Thema: …
+Klasse: …
+Anzahl Inseln (Aufgabengruppen): …
+[Falls es Buchaufgaben sind: Buch S. …, Nr. … – dann bitte KEIN Rätselblatt, nur Schatzkarte als Tischkarte und Lösungsblatt.]
+
+Regeln:
+- Jede Insel hat mehrere Teilaufgaben (a, b, c …), höchstens 6.
+- Schatzkarte: ein Zahlenfeld mit allen richtigen Ergebnissen und zu jeder Teilaufgabe 1–2 Fallen. Fallen sind Ergebnisse, die durch typische Fehler entstehen (z. B. Übertrag vergessen, kleinere von größerer Ziffer abgezogen). Sie müssen plausibel aussehen.
+- Jede Zahl auf der Schatzkarte trägt eine Ziffer 0–9. Die Ziffern der richtigen Ergebnisse ergeben in der Reihenfolge a, b, c … den Code der Insel.
+- Eine Falle trägt nie dieselbe Ziffer wie das richtige Ergebnis derselben Teilaufgabe.
+- Keine Auswahlantworten direkt neben den Aufgaben. Ergebnisse nie zu einem Code zusammenrechnen.
+
+Liefere:
+1. Rätselblatt als PDF, A4 hochkant: Vorderseite Aufgaben, Rückseite Schatzkarte.
+2. Lösungsblatt als PDF mit Rechenwegen, Codes und welche Falle zu welchem Fehler gehört.
+3. Diesen Import-Text in einem Codeblock (nur die Zeilen, die passen):
+
+ABENTEUER: Name des Abenteuers
+ZIEL: Belohnung für die Klasse
+
+INSEL: Rätsel 1
+STERNE: 1
+CODE: 78439
+FALLE: a 2 = kleinere von größerer Ziffer abgezogen
+FALLE: c 5 = Übertrag vergessen
+
+INSEL: Bonus
+ABSCHNITT: Sprinter
+AB: Rätsel 1
+STERNE: 3
+CODE: 495
+
+(ABSCHNITT: Grundlagen, Wahlpflicht 1, Wahlpflicht 2 oder Sprinter. ART: Code, Vergleich oder Lehrkraft. Aufgaben ohne eindeutige Zahl, z. B. Zeichnungen, bekommen ART: Vergleich und keinen CODE. Für jede Vergleichs-Insel bitte eine eigene, gut lesbare Lösungsseite im Lösungsblatt, die ich fotografieren kann. FALLE: Teilaufgabe, Ziffer der Falle, =, kurzer Tipp für das Kind.)`;
+
+/* ================= Fortschritt ================= */
+const AP=(sid,aid)=>((S.progress[sid]||={})[aid]||={choice:null,isl:{}});
+const IP=(sid,aid,iid)=>(AP(sid,aid).isl[iid]||={done:false,tries:0,locked:false,pending:false});
+const peek=(sid,aid,iid)=>S.progress[sid]?.[aid]?.isl?.[iid];
+const isDone=(sid,aid,iid)=>!!peek(sid,aid,iid)?.done;
+const choiceOf=(sid,aid)=>S.progress[sid]?.[aid]?.choice||null;
+function secs(a){const g=k=>a.islands.filter(i=>i.sec===k);const L1=g("wp1"),L2=g("wp2");return{R:g("route"),L1,L2,SP:g("sprint"),fork:L1.length+L2.length>0}}
+const sumStars=l=>l.reduce((t,i)=>t+(+i.stars||0),0);
+const passed=(sid,aid,iid)=>{const p=peek(sid,aid,iid);return !!(p&&(p.done||p.pending))};
+const forkOpen=(a,sid)=>secs(a).R.every(i=>passed(sid,a.id,i.id));
+function status(a,sid,isl){
+  const p=peek(sid,a.id,isl.id)||{};
+  if(p.done)return"done"; if(p.pending)return"pending";
+  const s=secs(a),ch=choiceOf(sid,a.id);let st="open";
+  const seqOk=list=>{const k=list.indexOf(isl);return k<=0||passed(sid,a.id,list[k-1].id)};
+  if(isl.sec==="route"){if(!seqOk(s.R))st="fog"}
+  else if(isl.sec==="wp1"||isl.sec==="wp2"){const k=isl.sec==="wp1"?1:2;
+    if(ch&&ch!==k)st="closed";else if(!ch||!forkOpen(a,sid))st="fog";else if(!seqOk(k===1?s.L1:s.L2))st="fog"}
+  else if(isl.sec==="sprint"){if(isl.after&&a.islands.some(x=>x.id===isl.after)&&!passed(sid,a.id,isl.after))st="fog"}
+  if(st==="open"&&p.locked)return"locked";
+  return st;
+}
+function goalReached(a,sid){const s=secs(a);if(!s.R.every(i=>isDone(sid,a.id,i.id)))return false;if(!s.fork)return true;
+  const c=choiceOf(sid,a.id);if(!c)return false;return (c===1?s.L1:s.L2).every(i=>isDone(sid,a.id,i.id))}
+function kidTarget(a,sid){const s=secs(a);if(goalReached(a,sid))return"ziel";
+  const r=s.R.find(i=>!passed(sid,a.id,i.id));if(r)return r.id;
+  if(s.fork){const c=choiceOf(sid,a.id);if(!c)return"fork";const l=(c===1?s.L1:s.L2).find(i=>!passed(sid,a.id,i.id));if(l)return l.id}
+  return"ziel"}
+const kidStars=(a,sid)=>a.islands.reduce((t,i)=>t+(isDone(sid,a.id,i.id)?(+i.stars||0):0),0);
+function maxStars(a){const s=secs(a);return sumStars(s.R)+Math.max(sumStars(s.L1),sumStars(s.L2))+sumStars(s.SP)}
+function pflicht(a){const s=secs(a);if(!s.fork)return sumStars(s.R);const x=sumStars(s.L1),y=sumStars(s.L2);return sumStars(s.R)+(x&&y?Math.min(x,y):x||y)}
+const classSum=(a,c)=>c.students.reduce((t,s)=>t+kidStars(a,s.id),0);
+const classGoal=(a,c)=>Math.max(1,Math.round((+a.goalPerKid||pflicht(a)||1)*c.students.length));
+
+/* ================= Ton (Standard aus) ================= */
+let AC;
+function sfx(kind){if(!S.sound)return;try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();const t=AC.currentTime;
+  const notes=kind==="win"?[523,659,784,1047]:[196,147];
+  notes.forEach((f,i)=>{const o=AC.createOscillator(),g=AC.createGain();o.type=kind==="win"?"triangle":"sawtooth";o.frequency.value=f;
+    g.gain.setValueAtTime(0,t+i*.11);g.gain.linearRampToValueAtTime(kind==="win"?.18:.08,t+i*.11+.02);g.gain.exponentialRampToValueAtTime(.001,t+i*.11+.3);
+    o.connect(g).connect(AC.destination);o.start(t+i*.11);o.stop(t+i*.11+.32)})}catch(e){}}
+
+/* ================= Karte (SVG) ================= */
+function blob(cx,cy,r,seed,n=9){const rnd=rng(seed);const p=[];for(let k=0;k<n;k++){const a=k/n*Math.PI*2,rr=r*(.84+rnd()*.28);p.push([cx+Math.cos(a)*rr,cy+Math.sin(a)*rr])}
+  let d="";for(let k=0;k<n;k++){const p0=p[(k-1+n)%n],p1=p[k],p2=p[(k+1)%n],p3=p[(k+2)%n];
+    if(k===0)d+=`M${p1[0].toFixed(1)},${p1[1].toFixed(1)}`;
+    d+=` C${(p1[0]+(p2[0]-p0[0])/6).toFixed(1)},${(p1[1]+(p2[1]-p0[1])/6).toFixed(1)} ${(p2[0]-(p3[0]-p1[0])/6).toFixed(1)},${(p2[1]-(p3[1]-p1[1])/6).toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`}
+  return d+"Z"}
+function smooth(p){if(p.length<2)return"";let d=`M${p[0].x},${p[0].y}`;for(let i=0;i<p.length-1;i++){const p0=p[i-1]||p[i],p1=p[i],p2=p[i+1],p3=p[i+2]||p2;
+  d+=` C${(p1.x+(p2.x-p0.x)/6).toFixed(1)},${(p1.y+(p2.y-p0.y)/6).toFixed(1)} ${(p2.x-(p3.x-p1.x)/6).toFixed(1)},${(p2.y-(p3.y-p1.y)/6).toFixed(1)} ${p2.x},${p2.y}`}return d}
+function shipSvg(x,y,sc){return `<g transform="translate(${x.toFixed(1)},${y.toFixed(1)}) scale(${sc})"><g class="wake">
+  <path d="M-34,10 Q-10,18 34,10" fill="none" stroke="#3D7F8C" stroke-width="3" opacity=".5"/>
+  <path d="M-30,-2 L30,-2 L22,12 L-22,12 Z" fill="#6E4426" stroke="#40260F" stroke-width="2.5"/>
+  <line x1="0" y1="-2" x2="0" y2="-46" stroke="#40260F" stroke-width="3"/>
+  <path d="M2,-42 Q22,-28 2,-8 Z" fill="#FBF5E4" stroke="#40260F" stroke-width="2"/>
+  <path d="M-2,-40 Q-20,-26 -2,-10 Z" fill="#F2E6C6" stroke="#40260F" stroke-width="2"/>
+  <path d="M0,-46 L14,-42 L0,-38 Z" fill="#B1372B"/></g></g>`}
+function compass(x,y,r){return `<g transform="translate(${x},${y})" opacity=".55"><circle r="${r}" fill="none" stroke="#7A6247" stroke-width="2"/><circle r="${r*.7}" fill="none" stroke="#7A6247" stroke-width="1"/>
+  <path d="M0,${-r} L${r*.16},0 L0,${r} L${-r*.16},0Z" fill="#7A6247"/><path d="M${-r},0 L0,${r*.16} L${r},0 L0,${-r*.16}Z" fill="#B9A27C"/>
+  <text y="${-r-6}" text-anchor="middle" class="lbl sm" style="stroke-width:3px">N</text></g>`}
+
+function mapSvg(a,ctx){
+  const s=secs(a),W=1000,H=600,mx=80,mid=292;
+  const mw=Math.max(s.L1.length,s.L2.length,1);
+  const zc=s.fork?s.R.length+1+mw+1:s.R.length+1;
+  const dx=(W-2*mx)/zc,X=c=>mx+c*dx;
+  const r=Math.max(24,Math.min(46,dx*.34)),rs=r*.72;
+  const P={start:{x:X(0),y:mid}};
+  s.R.forEach((i,k)=>P[i.id]={x:X(k+1),y:mid+(k%2?64:-64)});
+  let fc=0;
+  if(s.fork){fc=s.R.length+1;P.fork={x:X(fc),y:mid};
+    const span=X(zc)-X(fc);
+    const lane=(L,y0,sg)=>L.forEach((i,k)=>P[i.id]={x:X(fc)+span*(k+1)/(L.length+1),y:y0+(k%2?sg*24:0)});
+    lane(s.L1,mid-152,1);lane(s.L2,mid+152,-1)}
+  P.ziel={x:X(zc),y:mid};
+  const groups={};s.SP.forEach(i=>{const k=P[i.after]?i.after:"start";(groups[k]||=[]).push(i)});
+  const seq=["start",...s.R.map(i=>i.id),s.fork?"fork":"ziel"],signs=[];
+  Object.entries(groups).forEach(([k,L])=>{const ix=seq.indexOf(k),a0=P[k],a1=P[seq[ix+1]]||P.ziel;
+    const sg={x:(a0.x+a1.x)/2,y:(a0.y+a1.y)/2};P["sg_"+k]=sg;signs.push(sg);
+    const top=Math.max(88,Math.min(a0.y,a1.y)-122);
+    L.forEach((i,j)=>{P[i.id]={x:sg.x+(j-(L.length-1)/2)*rs*3,y:top,sp:true,anchor:"sg_"+k}})});
+
+  const kid=ctx.mode==="kid",sid=ctx.sid;
+  const st=i=>kid?status(a,sid,i):"neutral";
+  let out=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Schatzkarte ${esc(a.name)}">
+  <defs><filter id="fogb" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5"/></filter>
+  <pattern id="hatch" width="14" height="14" patternUnits="userSpaceOnUse"><path d="M0 14 L14 0" stroke="#3D7F8C" stroke-width="1" opacity=".18"/></pattern></defs>
+  <rect x="10" y="10" width="${W-20}" height="${H-20}" rx="10" fill="none" stroke="#B9A27C" stroke-width="2"/>
+  <rect x="18" y="18" width="${W-36}" height="${H-36}" rx="6" fill="none" stroke="#D9C291" stroke-width="1"/>
+  ${compass(70,H-70,34)}`;
+  const wv=rng(hash(a.id));for(let k=0;k<9;k++){const x=40+wv()*920,y=40+wv()*520;out+=`<path d="M${x.toFixed(0)},${y.toFixed(0)} q8,-6 16,0 t16,0" fill="none" stroke="#3D7F8C" stroke-width="2" opacity=".22"/>`}
+  // Wege
+  const main=[P.start,...s.R.map(i=>P[i.id])];
+  if(s.fork){main.push(P.fork);out+=`<path class="route" d="${smooth(main)}"/>`;
+    [[s.L1,1],[s.L2,2]].forEach(([L,k])=>{const dim=kid&&choiceOf(sid,a.id)&&choiceOf(sid,a.id)!==k;out+=`<path class="route" ${dim?'opacity=".2"':""} d="${smooth([P.fork,...L.map(i=>P[i.id]),P.ziel])}"/>`})}
+  else{main.push(P.ziel);out+=`<path class="route" d="${smooth(main)}"/>`}
+  s.SP.forEach(i=>{const p=P[i.id],an=P[p.anchor];out+=`<path class="route" style="opacity:.55" d="M${an.x.toFixed(1)},${(an.y-36).toFixed(1)} L${p.x.toFixed(1)},${p.y.toFixed(1)}"/>`});
+  signs.forEach(sg=>{const x=sg.x,y=sg.y;out+=`<g><rect x="${(x-2.5).toFixed(1)}" y="${(y-34).toFixed(1)}" width="5" height="34" fill="#6E4426" stroke="#40260F" stroke-width="1.5"/>
+    <path d="M${(x-11).toFixed(1)},${(y-30).toFixed(1)} v-12 l11,-12 l11,12 v12 z" fill="#A8774A" stroke="#40260F" stroke-width="2"/>
+    <path d="M${x.toFixed(1)},${(y-48).toFixed(1)} l-5,6 h3 v8 h4 v-8 h3 z" fill="#FBF5E4"/></g>`});
+  // Start
+  out+=`<g><path d="${blob(P.start.x,P.start.y,r*.8,hash(a.id+"s"))}" fill="#E2C07F" stroke="#9C7438" stroke-width="2"/>
+    <rect x="${P.start.x-4}" y="${P.start.y-r*.2}" width="${r*.9}" height="7" fill="#6E4426"/>
+    <text x="${P.start.x}" y="${P.start.y+r+26}" text-anchor="middle" class="lbl">Hafen</text></g>`;
+  // Inseln
+  const islandG=(i)=>{
+    const p=P[i.id],rr=p.sp?rs:r,status_=st(i),seed=hash(i.id);
+    const above=p.y<mid-1||(p.sp&&p.y<mid);
+    const tapA=kid?` class="tap${status_==="closed"?" closed":""}" data-act="isl" data-id="${i.id}" role="button" tabindex="0" aria-label="${esc(i.name)}"`:status_==="closed"?` class="closed"`:"";
+    let g=`<g${tapA}><circle cx="${p.x}" cy="${p.y}" r="${rr*1.45}" fill="transparent"/>
+      <path d="${blob(p.x,p.y,rr*1.32,seed+7)}" fill="#C6E0D8" opacity=".55"/><path d="${blob(p.x,p.y,rr*1.32,seed+7)}" fill="url(#hatch)"/>
+      <path class="sand" d="${blob(p.x,p.y,rr,seed)}" fill="#E2C07F" stroke="#9C7438" stroke-width="2"/>
+      <path d="${blob(p.x-rr*.08,p.y-rr*.05,rr*.6,seed+3,7)}" fill="#8DAA5E" stroke="#6E8B44" stroke-width="1.5"/>`;
+    if(status_==="open")g+=`<circle class="pulse" cx="${p.x}" cy="${p.y}" r="${rr*1.18}" fill="none" stroke="#C2923A" stroke-width="4" stroke-dasharray="8 7"/>`;
+    if(status_==="done")g+=`<line x1="${p.x+2}" y1="${p.y+rr*.15}" x2="${p.x+2}" y2="${p.y-rr*.95}" stroke="#40260F" stroke-width="3"/><path d="M${p.x+3},${p.y-rr*.95} L${p.x+rr*.75},${p.y-rr*.72} L${p.x+3},${p.y-rr*.48}Z" fill="#B1372B" stroke="#7A1E15" stroke-width="1.5"/><circle cx="${p.x+rr*.3}" cy="${p.y-rr*.72}" r="${rr*.08}" fill="#FBF5E4"/>`;
+    if(status_==="locked")g+=`<g transform="translate(${p.x},${p.y})"><path d="M${-rr*.22},${-rr*.05} v${-rr*.18} a${rr*.22},${rr*.22} 0 0 1 ${rr*.44},0 v${rr*.18}" fill="none" stroke="#40260F" stroke-width="4"/><rect x="${-rr*.34}" y="${-rr*.06}" width="${rr*.68}" height="${rr*.5}" rx="4" fill="#C2923A" stroke="#40260F" stroke-width="2.5"/></g>`;
+    if(status_==="pending")g+=`<g transform="translate(${p.x},${p.y})"><circle r="${rr*.42}" fill="#FBF5E4" stroke="#C2923A" stroke-width="3"/><path d="M${-rr*.18},${-rr*.24} h${rr*.36} l${-rr*.36},${rr*.48} h${rr*.36}z" fill="#C2923A" stroke="#40260F" stroke-width="2"/></g>`;
+    if(status_==="fog")g+=`<g filter="url(#fogb)" opacity=".93"><circle cx="${p.x-rr*.45}" cy="${p.y+rr*.1}" r="${rr*.75}" fill="#FBF5E4"/><circle cx="${p.x+rr*.4}" cy="${p.y-rr*.15}" r="${rr*.8}" fill="#FBF5E4"/><circle cx="${p.x}" cy="${p.y+rr*.35}" r="${rr*.7}" fill="#FBF5E4"/></g>`;
+    const muted=status_==="fog"?" muted":"";
+    const nm=esc(cut(i.name,p.sp?16:20)),sx="★".repeat(+i.stars||0);
+    if(above)g+=`<text x="${p.x}" y="${p.y-rr-30}" text-anchor="middle" class="stx${status_==="done"||!kid?"":" off"}">${sx}</text><text x="${p.x}" y="${p.y-rr-12}" text-anchor="middle" class="lbl${p.sp?" sm":""}${muted}">${nm}</text>`;
+    else g+=`<text x="${p.x}" y="${p.y+rr+24}" text-anchor="middle" class="lbl${p.sp?" sm":""}${muted}">${nm}</text><text x="${p.x}" y="${p.y+rr+42}" text-anchor="middle" class="stx${status_==="done"||!kid?"":" off"}">${sx}</text>`;
+    return g+`<title>${esc(i.name)}</title></g>`};
+  a.islands.forEach(i=>out+=islandG(i));
+  // Weggabelung
+  if(s.fork){const p=P.fork,ch=kid?choiceOf(sid,a.id):null,canChoose=kid&&!ch&&forkOpen(a,sid);
+    out+=`<g${kid?` class="tap" data-act="fork" role="button" tabindex="0" aria-label="Weggabelung"`:""}><circle cx="${p.x}" cy="${p.y}" r="${r*1.4}" fill="transparent"/>
+      ${canChoose?`<circle class="pulse" cx="${p.x}" cy="${p.y}" r="${r*1.05}" fill="none" stroke="#C2923A" stroke-width="4" stroke-dasharray="8 7"/>`:""}
+      <rect x="${p.x-4}" y="${p.y-r*.9}" width="8" height="${r*1.8}" fill="#6E4426" stroke="#40260F" stroke-width="2"/>
+      <path d="M${p.x+2},${p.y-r*.8} h${r*1.1} l${r*.25},${r*.22} l${-r*.25},${r*.22} h${-r*1.1}z" fill="${ch===1?"#C2923A":"#A8774A"}" stroke="#40260F" stroke-width="2"/>
+      <path d="M${p.x+2},${p.y+r*.15} h${r*1.1} l${r*.25},${r*.22} l${-r*.25},${r*.22} h${-r*1.1}z" fill="${ch===2?"#C2923A":"#A8774A"}" stroke="#40260F" stroke-width="2"/>
+      <text x="${p.x+r*.6}" y="${p.y-r*.52}" text-anchor="middle" style="font:900 ${Math.round(r*.36)}px var(--body);fill:#FBF5E4">1</text>
+      <text x="${p.x+r*.6}" y="${p.y+r*.43}" text-anchor="middle" style="font:900 ${Math.round(r*.36)}px var(--body);fill:#FBF5E4">2</text>
+      <text x="${p.x}" y="${p.y+r+30}" text-anchor="middle" class="lbl sm">Weggabelung</text><title>Weggabelung</title></g>`;
+    const ln=(L,k,yy)=>{if(!L.length)return;const xs=L.map(i=>P[i.id].x);const cx=(Math.min(...xs)+Math.max(...xs))/2;
+      out+=`<text x="${cx}" y="${yy}" text-anchor="middle" class="lbl" style="font-family:var(--display);font-weight:400;font-size:24px;fill:#3D7F8C">${esc(cut(k===1?a.b1:a.b2,24))}</text>`};
+    ln(s.L1,1,mid-58);ln(s.L2,2,mid+72)}
+  // Ziel
+  {const p=P.ziel,rz=r*1.2,reached=kid&&goalReached(a,sid);
+    out+=`<g${kid?` class="tap" data-act="ziel" role="button" tabindex="0" aria-label="Ziel"`:""}><circle cx="${p.x}" cy="${p.y}" r="${rz*1.4}" fill="transparent"/>
+      <path d="${blob(p.x,p.y,rz*1.3,hash(a.id+"z")+7)}" fill="#C6E0D8" opacity=".6"/>
+      <path d="${blob(p.x,p.y,rz,hash(a.id+"z"))}" fill="#E2C07F" stroke="#9C7438" stroke-width="2.5"/>
+      <path d="M${p.x-rz*.35},${p.y-rz*.35} L${p.x+rz*.35},${p.y+rz*.35} M${p.x+rz*.35},${p.y-rz*.35} L${p.x-rz*.35},${p.y+rz*.35}" stroke="#B1372B" stroke-width="${Math.max(5,rz*.16)}" stroke-linecap="round"/>
+      ${reached?`<line x1="${p.x+rz*.5}" y1="${p.y+rz*.2}" x2="${p.x+rz*.5}" y2="${p.y-rz*1.05}" stroke="#40260F" stroke-width="3.5"/><path d="M${p.x+rz*.5},${p.y-rz*1.05} L${p.x+rz*1.2},${p.y-rz*.8} L${p.x+rz*.5},${p.y-rz*.55}Z" fill="#C2923A" stroke="#7A5A1E" stroke-width="1.5"/>`:""}
+      <text x="${p.x}" y="${p.y+rz+30}" text-anchor="middle" class="lbl" style="font-family:var(--display);font-weight:400;font-size:28px">Ziel</text>
+      ${ctx.mode==="class"&&a.goal!==false&&a.goalText?`<text x="${p.x}" y="${p.y+rz+54}" text-anchor="middle" class="lbl sm">${esc(cut(a.goalText,22))}</text>`:""}<title>Ziel</title></g>`}
+  // Schiff
+  if(kid){const tk=kidTarget(a,sid),tp=P[tk]||P.ziel,tr=tk==="ziel"?r*1.2:r,sc=Math.max(.6,r/46);
+    const to={x:tp.x-tr-26,y:tp.y+tr*.55};let from=to;
+    let via="";
+    if(ctx.from&&P[ctx.from]){const fp=P[ctx.from],fr=fp.sp?rs:r;from={x:fp.x+fr*.3,y:fp.y+fr+14};
+      if(fp.sp){const sg=P[fp.anchor];via=`${(sg.x-30).toFixed(1)},${(sg.y+8).toFixed(1)}`}}
+    out+=`<g id="kship" data-via="${via}" data-tx="${to.x.toFixed(1)}" data-ty="${to.y.toFixed(1)}" style="transform:translate(${from.x.toFixed(1)}px,${from.y.toFixed(1)}px)">${shipSvg(0,0,sc)}</g>`}
+  else if(ctx.mode==="class"&&a.goal!==false){const c=ctx.cls;const f=Math.min(1,classSum(a,c)/classGoal(a,c));
+    const pts=[P.start,...s.R.map(i=>P[i.id]),...(s.fork?[P.fork]:[]),P.ziel];
+    let L=0;const seg=[];for(let k=0;k<pts.length-1;k++){const d=Math.hypot(pts[k+1].x-pts[k].x,pts[k+1].y-pts[k].y);seg.push(d);L+=d}
+    let want=f*L,k=0;while(k<seg.length-1&&want>seg[k]){want-=seg[k];k++}
+    const t=seg[k]?Math.min(1,want/seg[k]):0,x=pts[k].x+(pts[k+1].x-pts[k].x)*t,y=pts[k].y+(pts[k+1].y-pts[k].y)*t;
+    out+=shipSvg(x,y-6,1.15)}
+  return out+"</svg>";
+}
+
+const CHEST_ICON=`<svg viewBox="0 0 220 180" aria-hidden="true"><rect x="20" y="80" width="180" height="90" rx="8" fill="#8A5530" stroke="#2A1505" stroke-width="5"/><rect x="44" y="80" width="16" height="90" fill="#E1C06A"/><rect x="160" y="80" width="16" height="90" fill="#E1C06A"/><path d="M20 82 V60 Q20 22 110 22 Q200 22 200 60 V82 Z" fill="#9A6038" stroke="#2A1505" stroke-width="5"/><rect x="94" y="72" width="32" height="40" rx="5" fill="#E1C06A" stroke="#2A1505" stroke-width="3"/></svg>`;
+function treasure(a,c,big){if(a.goal===false)return "";const sum=classSum(a,c),goal=classGoal(a,c),pct=Math.min(100,Math.round(sum/goal*100));
+  const rest=Math.max(0,goal-sum);
+  return `<div class="treasure${big?" big":""}"><div class="ico">${CHEST_ICON}</div><div class="txt">
+    <div class="t1">Klassenschatz: ${sum} von ${goal} Sternen</div>
+    <div class="t2">${rest?`Noch ${rest} Sterne bis zum Ziel`:"Ziel erreicht!"}${a.goalText?`: ${esc(a.goalText)}`:""}</div>
+    <div class="meter" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div></div></div>`}
+
+const CHEST=`<svg class="chest" id="chest" viewBox="0 0 220 180" aria-hidden="true">
+<defs><linearGradient id="cw" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9A6038"/><stop offset="1" stop-color="#5A3418"/></linearGradient>
+<linearGradient id="cb" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#A97A26"/><stop offset=".5" stop-color="#F3DC93"/><stop offset="1" stop-color="#A97A26"/></linearGradient>
+<radialGradient id="cg"><stop offset="0" stop-color="#FFEBA6"/><stop offset="1" stop-color="#FFEBA6" stop-opacity="0"/></radialGradient></defs>
+<ellipse class="glow" cx="110" cy="70" rx="120" ry="80" fill="url(#cg)"/>
+<g class="gold"><ellipse cx="110" cy="84" rx="84" ry="14" fill="#E8B83C"/><circle cx="72" cy="78" r="10" fill="#F5D168" stroke="#A97A26" stroke-width="2"/><circle cx="100" cy="72" r="11" fill="#F5D168" stroke="#A97A26" stroke-width="2"/><circle cx="128" cy="76" r="10" fill="#F5D168" stroke="#A97A26" stroke-width="2"/><circle cx="152" cy="80" r="9" fill="#F5D168" stroke="#A97A26" stroke-width="2"/><path d="M112 58 l6 10 h-12z" fill="#B1372B"/></g>
+<rect x="20" y="80" width="180" height="90" rx="8" fill="url(#cw)" stroke="#2A1505" stroke-width="4"/>
+<path d="M24 112H196M24 142H196" stroke="#2A1505" stroke-opacity=".3" stroke-width="3"/>
+<rect x="44" y="80" width="16" height="90" fill="url(#cb)"/><rect x="160" y="80" width="16" height="90" fill="url(#cb)"/>
+<rect x="94" y="88" width="32" height="40" rx="5" fill="url(#cb)" stroke="#6B4C18" stroke-width="2"/><circle cx="110" cy="103" r="5" fill="#2A1505"/><path d="M107 105h6l2 12h-10z" fill="#2A1505"/>
+<g class="lid"><path d="M20 82 V60 Q20 22 110 22 Q200 22 200 60 V82 Z" fill="url(#cw)" stroke="#2A1505" stroke-width="4"/>
+<path d="M44 82 V34 Q52 29 60 27 V82Z" fill="url(#cb)"/><path d="M160 82 V27 Q168 29 176 34 V82Z" fill="url(#cb)"/><rect x="94" y="68" width="32" height="16" rx="3" fill="url(#cb)" stroke="#6B4C18" stroke-width="2"/></g>
+</svg>`;
+
+/* ================= Kinder-Ansichten ================= */
+let V={s:"class"},idleT;
+function go(v){V=v;clearTimeout(idleT);render();window.scrollTo(0,0)}
+const cls=()=>S.classes.find(c=>c.id===V.cls);
+const advsFor=c=>S.adventures.filter(a=>a.active&&a.classIds.includes(c.id));
+const adv=()=>S.adventures.find(a=>a.id===V.aid);
+const stu=()=>cls()?.students.find(s=>s.id===V.sid);
+const toNames=()=>go({s:"name",cls:V.cls,aid:V.aid});
+function idle(ms,fn){clearTimeout(idleT);idleT=setTimeout(fn||toNames,ms)}
+
+function render(){
+  document.getElementById("teacherBtn").textContent=V.s==="teacher"?"Zurück zur Karte":"Lehrkraft";
+  if(V.s==="teacher")return teacher();
+  if(!S.classes.length){app.innerHTML=`<div class="empty">Noch keine Klasse angelegt.<br>Tippe oben rechts auf <b>Lehrkraft</b>.</div>`;return}
+  if(V.s==="class"){
+    if(S.classes.length===1){V={s:"adv",cls:S.classes[0].id};return render()}
+    app.innerHTML=`<h2>Welche Klasse?</h2><div class="grid names">${S.classes.map(c=>`<button class="big" data-act="pickClass" data-id="${c.id}">${esc(c.name)}</button>`).join("")}</div>`;return}
+  const c=cls();if(!c)return go({s:"class"});
+  if(V.s==="adv"){
+    const L=advsFor(c);
+    if(L.length===1){V={s:"name",cls:c.id,aid:L[0].id};return render()}
+    const bk=S.classes.length>1?`<button class="back" data-act="toClass">← Klasse</button>`:"";
+    if(!L.length){app.innerHTML=`${bk}<div class="empty">Für ${esc(c.name)} ist gerade kein Abenteuer aktiv.<br>${esc(S.teacher)} schaltet eins frei.</div>`;return}
+    app.innerHTML=`${bk}<h2>Welches Abenteuer?</h2><div class="grid names">${L.map(a=>`<button class="big" data-act="pickAdv" data-id="${a.id}">${esc(a.name)}<small>${a.islands.length} Inseln</small></button>`).join("")}</div>`;return}
+  const a=adv();if(!a||!a.active||!a.classIds.includes(c.id))return go({s:"adv",cls:c.id});
+  if(V.s==="name"){
+    const many=advsFor(c).length>1,bk=many?`<button class="back" data-act="toAdv">← Abenteuer</button>`:S.classes.length>1?`<button class="back" data-act="toClass">← Klasse</button>`:"";
+    const st=[...c.students].sort((x,y)=>x.name.localeCompare(y.name,"de"));
+    app.innerHTML=`<div class="bar">${bk}<span class="sp"></span><button class="back" data-act="beamer">Klassenkarte zeigen</button></div>
+      <h2>Wer bist du?</h2><p class="sub">${esc(a.name)}</p>
+      <div class="grid names">${st.map(s=>`<button class="big" data-act="pickKid" data-id="${s.id}">${esc(s.name)}</button>`).join("")}</div>`;return}
+  if(V.s==="beamer"){
+    app.innerHTML=`<div class="bar"><button class="back" data-act="toNames">← Zurück</button></div>
+      <h2>${esc(a.name)} · ${esc(c.name)}</h2>
+      <div class="map">${mapSvg(a,{mode:"class",cls:c})}</div>${treasure(a,c,true)}`;return}
+  const k=stu();if(!k)return toNames();
+  if(V.s==="map"){
+    app.innerHTML=`<div class="bar"><button class="back" data-act="toNames">← Das bin ich nicht</button><span class="sp"></span>
+      <span class="chip"><svg viewBox="0 0 24 24" aria-hidden="true">${STAR}</svg>${kidStars(a,k.id)} von ${maxStars(a)}</span></div>
+      <h2>Ahoi, ${esc(k.name)}!</h2><p class="sub">${esc(a.name)} · Wohin segelst du? Tippe auf deine Insel.</p>
+      <div class="map">${mapSvg(a,{mode:"kid",sid:k.id})}</div>${treasure(a,c,false)}`;
+    idle(60000);return}
+  if(V.s==="fork")return forkScreen(a,k);
+  const isl=a.islands.find(i=>i.id===V.iid);if(!isl)return go({...V,s:"map"});
+  if(V.s==="isl"){
+    if(isl.type==="code")return codeScreen(a,k,isl);
+    if(isl.type==="compare")return compareScreen(a,k,isl);
+    return teacherIsl(a,k,isl)}
+  if(V.s==="win")return winScreen(a,k,isl);
+  if(V.s==="pend")return pendScreen(a,k,isl);
+}
+
+function head(a,k,isl){return `<div class="bar"><button class="back" data-act="toMap">← Zur Karte</button><span class="sp"></span>${starsHtml(+isl.stars||0)}</div><h2>${esc(isl.name)}</h2>`}
+
+function codeScreen(a,k,isl){
+  const p=IP(k.id,a.id,isl.id),code=String(isl.code||""),n=code.length;
+  if(!n){app.innerHTML=head(a,k,isl)+`<div class="card"><p>Für diese Insel fehlt noch der Code. Sag ${esc(S.teacher)} Bescheid.</p></div>`;return}
+  const lab=n>1?LET:"";
+  const res=V.res;
+  app.innerHTML=head(a,k,isl)+`<div class="lockbox">
+    ${a.chest!==false?`<div class="stage">${CHEST}</div>`:""}
+    <div class="slots">${Array.from({length:n},(_,i)=>{const ch=V.val[i]||"";const c2=res?(res[i]?"ok":"bad"):(i===V.val.length?"cur":"");return `<div class="slot ${c2}">${esc(ch)}<small>${lab[i]||""}</small></div>`}).join("")}</div>
+    <div class="msg ${res?"bad":""}">${res?(p.locked?`Leider gesperrt. Geh zu ${esc(S.teacher)}.`:"Die roten Felder stimmen nicht. Rechne diese Aufgaben noch einmal."):""}</div>
+    ${res&&V.tips&&V.tips.length?`<ul class="tips">${V.tips.map(t=>`<li>${n>1?`<b>${LET[t.pos]})</b> `:""}Tipp: ${esc(t.text)}</li>`).join("")}</ul>`:""}
+    ${res||p.locked?"":`<div class="pad">${[1,2,3,4,5,6,7,8,9].map(d=>`<button data-act="digit" data-d="${d}" type="button">${d}</button>`).join("")}<button class="wide" data-act="del" type="button" aria-label="Löschen">⌫</button><button data-act="digit" data-d="0" type="button">0</button><button class="wide" data-act="clr" type="button">Neu</button></div>`}
+    ${res||p.locked?(p.locked?"":`<button class="check" data-act="toNames">Okay, zurück an den Platz</button>`):`<button class="check" data-act="checkCode" ${V.val.length<n?"disabled":""}>Schloss öffnen</button>`}
+    <div class="tries">${S.maxTries>0&&!p.locked?`Versuche übrig: ${Math.max(0,S.maxTries-p.tries)}`:""}</div></div>`;
+  if(V.shake){V.shake=false;requestAnimationFrame(()=>document.getElementById("chest")?.classList.add("shake"))}
+  idle(p.locked?8000:90000);
+}
+function checkCode(){
+  const a=adv(),k=stu(),isl=a.islands.find(i=>i.id===V.iid),p=IP(k.id,a.id,isl.id),code=String(isl.code);
+  if(V.val===code){p.done=true;p.at=Date.now();save();sfx("win");return go({...V,s:"win"})}
+  p.tries++;if(S.maxTries>0&&p.tries>=S.maxTries)p.locked=true;
+  V.res=[...code].map((d,i)=>V.val[i]===d);
+  const wrong=V.res.map((ok,i)=>ok?null:{pos:i,d:V.val[i]}).filter(Boolean);
+  p.errs=(p.errs||[]).concat(wrong.map(e=>({...e,at:Date.now()}))).slice(-40);
+  V.tips=wrong.map(e=>(isl.traps||[]).find(t=>t.pos===e.pos&&t.d===e.d)).filter(Boolean);
+  save();sfx("bad");V.shake=true;render();
+}
+function compareScreen(a,k,isl){
+  if(!V.step){
+    app.innerHTML=head(a,k,isl)+`<div class="card"><p>Hast du alle Aufgaben fertig gerechnet?</p><p class="note" style="font-size:17px">Erst danach schaust du in die Lösung.</p>
+      <div class="btnrow"><button class="check" data-act="cmpStart">Ja, Lösung vergleichen</button><button class="check alt" data-act="toMap">Noch nicht</button></div></div>`;
+    idle(90000);return}
+  const ph=(isl.photos||[]);
+  app.innerHTML=head(a,k,isl)+`<div class="card"><p><b>Vergleiche jetzt mit der Lösung.</b> ${esc(isl.hint||"")}</p>
+    ${ph.length?`<div class="phs wide">${ph.map(id=>`<button class="ph" data-act="zoom" data-id="${id}" aria-label="Lösung groß ansehen"><img data-ph="${id}" alt="Lösung"></button>`).join("")}</div><p class="note">Tippe auf das Bild, um es groß zu sehen.</p>`:""}
+    <p class="note" style="font-size:17px">Verbessere, was nicht stimmt. Fehler verbessern ist genauso gut.</p>
+    <div class="btnrow"><button class="check" data-act="cmpDone">Okay, fertig verglichen</button></div></div>`;
+  idle(180000);
+}
+function cmpDone(){
+  const a=adv(),k=stu(),isl=a.islands.find(i=>i.id===V.iid),p=IP(k.id,a.id,isl.id);
+  p.at=Date.now();
+  if(Math.random()<(+S.checkRate||0)){p.pending=true;save();return go({...V,s:"pend"})}
+  p.done=true;save();sfx("win");go({...V,s:"win"});
+}
+function teacherIsl(a,k,isl){
+  app.innerHTML=head(a,k,isl)+`<div class="card"><p>Diese Insel hakt ${esc(S.teacher)} ab.</p><p>Bist du fertig? Dann tippe auf „Ich bin fertig“ und zeig deine Arbeit ${esc(S.teacher)}. Die Sterne gibt es, wenn ${esc(S.teacher)} abhakt.</p>
+    <div class="btnrow"><button class="check" data-act="tFertig">Ich bin fertig</button><button class="check alt" data-act="toMap">Noch nicht</button></div></div>`;idle(30000)}
+function pendScreen(a,k,isl){
+  const t=isl.type==="teacher";
+  app.innerHTML=`<div class="win"><p class="h">${t?"Super!":"Kapitänskontrolle!"}</p><p class="n">${esc(k.name)}, zeig ${t?"deine Arbeit":"dein Heft"} ${esc(S.teacher)}.<br>Die Sterne für ${esc(isl.name)} gibt es danach. Du kannst schon weitersegeln!</p>
+    <div class="btnrow"><button class="check" data-act="toNames">Okay</button></div></div>`;idle(12000)}
+function winScreen(a,k,isl){
+  const coins=Array.from({length:18},(_,i)=>{const ang=(-160+i*(140/17))*Math.PI/180,dist=150+(i%3)*45;
+    return `<span class="coin" style="--dx:${(Math.cos(ang)*dist).toFixed(0)}px;--dy:${(Math.sin(ang)*dist).toFixed(0)}px;--r:${(i*47)%360}deg;--d:${(450+i*35)}ms"></span>`}).join("");
+  const reached=goalReached(a,k.id),chest=a.chest!==false;
+  app.innerHTML=`<div class="win win2"><div class="wl">
+      ${chest?`<div class="stage">${CHEST}<div class="burst">${coins}</div></div>`:""}
+      <p class="h">Sehr gut!</p>
+      <p class="n">${reached?"Du hast das Ziel erreicht!":"Du kannst weitersegeln!"}</p>
+      <div class="stars">${Array.from({length:+isl.stars||0},(_,i)=>starSvg(false,(chest?700:200)+i*250)).join("")}</div>
+      <p class="n" style="margin-top:16px;font-size:20px">${esc(k.name)} · ${esc(isl.name)} · Sterne: ${kidStars(a,k.id)} von ${maxStars(a)}</p>
+      <div class="btnrow"><button class="check alt" data-act="toMap">Weitersegeln</button><button class="check" data-act="toNames">Fertig</button></div></div>
+    <div class="wr"><div class="map static">${mapSvg(a,{mode:"kid",sid:k.id,from:isl.id})}</div></div></div>`;
+  requestAnimationFrame(()=>setTimeout(()=>document.getElementById("chest")?.classList.add("open"),120));
+  setTimeout(()=>{const s=document.getElementById("kship");if(!s)return;
+    const go2=(x,y,ms)=>{s.style.transition=`transform ${ms}ms ease-in-out`;s.style.transform=`translate(${x}px,${y}px)`};
+    if(s.dataset.via){const [vx,vy]=s.dataset.via.split(",");go2(vx,vy,1300);setTimeout(()=>{if(s.isConnected)go2(s.dataset.tx,s.dataset.ty,2200)},1350)}
+    else go2(s.dataset.tx,s.dataset.ty,2600)},chest?1300:600);
+  idle(14000);
+}
+function forkScreen(a,k){
+  const s=secs(a),sel=V.pick||0;
+  const card=(L,n,name)=>`<button class="way" aria-pressed="${sel===n}" data-act="pickWay" data-n="${n}"><span class="t">${esc(name)}</span>
+    <span>${sumStars(L)} Sterne · ${L.length} ${L.length===1?"Insel":"Inseln"}</span><ul>${L.map(i=>`<li>${esc(i.name)}</li>`).join("")}</ul></button>`;
+  app.innerHTML=`<div class="bar"><button class="back" data-act="toMap">← Zur Karte</button></div><h2>Wähle deinen Weg</h2>
+    <p class="sub">Du fährst danach nur diesen Weg. Wechseln kann nur ${esc(S.teacher)}.</p>
+    <div class="ways">${card(s.L1,1,a.b1||"Weg 1")}${card(s.L2,2,a.b2||"Weg 2")}</div>
+    <div class="btnrow"><button class="check" data-act="takeWay" ${sel?"":"disabled"}>Diesen Weg nehmen</button></div>`;idle(90000)}
+
+function tapIsland(id){
+  const a=adv(),k=stu(),isl=a.islands.find(i=>i.id===id);if(!isl)return;
+  const st=status(a,k.id,isl),s=secs(a);
+  if(st==="done")return toast("Diese Insel hast du schon geschafft.");
+  if(st==="pending")return toast(`Erledigt. ${S.teacher} hakt noch ab.`);
+  if(st==="locked")return toast(`Gesperrt. Frag ${S.teacher}.`);
+  if(st==="closed")return toast("Du fährst den anderen Weg.");
+  if(st==="fog"){
+    if(isl.sec==="sprint"){const an=a.islands.find(i=>i.id===isl.after);return toast(`Noch im Nebel. Schaffe erst ${an?an.name:"die Insel davor"}.`)}
+    if((isl.sec==="wp1"||isl.sec==="wp2")&&!forkOpen(a,k.id))return toast("Noch im Nebel. Schaffe erst alle Grundlagen-Inseln.");
+    if((isl.sec==="wp1"||isl.sec==="wp2")&&!choiceOf(k.id,a.id))return toast("Wähle zuerst an der Weggabelung deinen Weg.");
+    return toast("Noch im Nebel. Schaffe erst die Insel davor.")}
+  go({s:"isl",cls:V.cls,aid:V.aid,sid:V.sid,iid:id,val:"",res:null,tips:null,step:0,marks:null});
+}
+
+/* ================= Klicks ================= */
+const ACT={
+  pickClass:d=>go({s:"adv",cls:d.id}), toClass:()=>go({s:"class"}), pickAdv:d=>go({s:"name",cls:V.cls,aid:d.id}),
+  toAdv:()=>go({s:"adv",cls:V.cls,_:1,force:1}), pickKid:d=>go({s:"map",cls:V.cls,aid:V.aid,sid:d.id}),
+  toNames, beamer:()=>go({s:"beamer",cls:V.cls,aid:V.aid}), toMap:()=>go({s:"map",cls:V.cls,aid:V.aid,sid:V.sid}),
+  isl:d=>tapIsland(d.id),
+  fork:()=>{const a=adv(),k=stu();const ch=choiceOf(k.id,a.id);
+    if(ch)return toast(`Du fährst den Weg „${ch===1?a.b1:a.b2}“.`);
+    if(!forkOpen(a,k.id))return toast("Schaffe erst alle Grundlagen-Inseln.");
+    go({...V,s:"fork",pick:0})},
+  pickWay:d=>{V.pick=+d.n;render()},
+  takeWay:()=>{const a=adv(),k=stu();if(!V.pick)return;AP(k.id,a.id).choice=V.pick;save();toast("Gute Fahrt!");go({s:"map",cls:V.cls,aid:V.aid,sid:V.sid})},
+  ziel:()=>{const a=adv(),k=stu();toast(goalReached(a,k.id)?"Du hast das Ziel erreicht!":"Hier wartet das Ziel. Fahr alle Inseln deines Weges ab.")},
+  digit:d=>{const isl=adv().islands.find(i=>i.id===V.iid);if(V.val.length<String(isl.code).length){V.val+=d.d;render()}},
+  del:()=>{V.val=V.val.slice(0,-1);render()}, clr:()=>{V.val="";render()}, checkCode,
+  zoom:d=>zoom(d.id),
+  tFertig:()=>{const a=adv(),k=stu(),p=IP(k.id,a.id,V.iid);p.pending=true;p.at=Date.now();save();go({...V,s:"pend"})},
+  cmpStart:()=>{V.step=1;render()}, mark:d=>{V.marks[+d.i]=d.v;render()}, cmpDone,
+};
+app.addEventListener("click",e=>{const t=e.target.closest("[data-act]");if(!t||!app.contains(t))return;
+  const f=ACT[t.dataset.act]||TACT[t.dataset.act];if(f){e.preventDefault();f(t.dataset,t,e)}});
+app.addEventListener("keydown",e=>{if((e.key==="Enter"||e.key===" ")&&e.target.matches?.("g[data-act]")){e.preventDefault();e.target.dispatchEvent(new MouseEvent("click",{bubbles:true}))}});
+document.addEventListener("keydown",e=>{
+  if(V.s!=="isl"||V.res||e.target.matches("input,textarea,select"))return;
+  const a=adv(),isl=a?.islands.find(i=>i.id===V.iid);if(!isl||isl.type!=="code")return;const n=String(isl.code).length;
+  if(/^[0-9]$/.test(e.key)&&V.val.length<n){V.val+=e.key;render()}
+  else if(e.key==="Backspace"){V.val=V.val.slice(0,-1);render()}
+  else if(e.key==="Enter"&&V.val.length===n)checkCode();
+});
+
+/* ================= Lehrkraft ================= */
+let T={tab:"overview",cls:null,aid:null,unlocked:false,edit:null};
+document.getElementById("teacherBtn").onclick=()=>{if(V.s==="teacher"){T.unlocked=false;return go({s:"class"})}go({s:"teacher"})};
+const daysSince=t=>t?Math.floor((Date.now()-t)/864e5):null;
+
+function teacher(){
+  if(!T.unlocked){
+    if(!S.pin){
+      app.innerHTML=`<h2>Lehrkraft-Bereich einrichten</h2><div class="panel"><h3>Lege eine PIN fest</h3>
+      <p class="note">Damit kommen die Kinder nicht in die Übersicht. Mindestens 4 Ziffern.</p>
+      <div class="row"><input type="password" inputmode="numeric" id="p1" placeholder="PIN"><input type="password" inputmode="numeric" id="p2" placeholder="PIN wiederholen"><button class="btn pri" data-act="setPin">Speichern</button></div><p class="note" id="pm"></p></div>`;return}
+    app.innerHTML=`<h2>Lehrkraft</h2><div class="panel"><div class="row"><input type="password" inputmode="numeric" id="pin" placeholder="PIN"><button class="btn pri" data-act="tryPin">Öffnen</button></div><p class="note" id="pm"></p></div>`;
+    const pin=document.getElementById("pin");pin.addEventListener("keydown",e=>{if(e.key==="Enter")TACT.tryPin()});pin.focus();return}
+  if(!T.cls||!S.classes.find(c=>c.id===T.cls))T.cls=S.classes[0]?.id||null;
+  const tabs=`<div class="tabs">${[["overview","Übersicht"],["adv","Abenteuer"],["sol","Lösungen"],["classes","Klassen"],["settings","Einstellungen"]].map(([k,l])=>`<button data-act="tab" data-t="${k}" aria-pressed="${T.tab===k}">${l}</button>`).join("")}</div>`;
+  const hasProg=Object.keys(S.progress).length>0,ds=daysSince(S.lastBackup);
+  let top=!canStore?`<div class="warnbar">Speichern ist in diesem Browser gerade nicht möglich (privates Surfen?). Fortschritt geht beim Schließen verloren.</div>`:"";
+  if(hasProg&&(ds===null||ds>=14))top+=`<div class="warnbar">${ds===null?"Du hast noch keine Sicherung gespeichert.":`Letzte Sicherung vor ${ds} Tagen.`} <button class="btn sm pri" data-act="backup">Jetzt sichern</button><span class="note" id="bm"></span></div>`;
+  if(S.classes.some(c=>c.demo))top+=`<div class="infobar">Zum Ausprobieren gibt es eine <b>Beispielklasse</b> mit zwei Beispiel-Abenteuern. Lösche sie unter „Klassen“ und „Abenteuer“, wenn du sie nicht mehr brauchst.</div>`;
+  let body="";
+  if(T.tab==="overview")body=tOverview();
+  if(T.tab==="adv")body=T.edit?tEdit():tAdvList();
+  if(T.tab==="sol")body=tSolutions();
+  if(T.tab==="classes")body=tClasses();
+  if(T.tab==="settings")body=tSettings();
+  app.innerHTML=`<h2>Lehrkraft</h2>${top}${tabs}${body}`;
+  bindTeacher();
+}
+function classTabs(){return S.classes.length>1?`<div class="tabs">${S.classes.map(k=>`<button data-act="tCls" data-id="${k.id}" aria-pressed="${k.id===T.cls}">${esc(k.name)}</button>`).join("")}</div>`:""}
+function tOverview(){
+  const c=S.classes.find(x=>x.id===T.cls);if(!c)return `<div class="empty">Noch keine Klasse. Lege unter „Klassen“ eine an.</div>`;
+  const L=S.adventures.filter(a=>a.classIds.includes(c.id));
+  let h=classTabs();
+  if(!L.length)return h+`<div class="empty">${esc(c.name)} hat noch kein Abenteuer. Ordne unter „Abenteuer“ eins zu.</div>`;
+  if(!L.find(a=>a.id===T.aid))T.aid=L[0].id;const a=L.find(x=>x.id===T.aid),s=secs(a);
+  if(L.length>1)h+=`<div class="tabs">${L.map(x=>`<button data-act="tAdv" data-id="${x.id}" aria-pressed="${x.id===a.id}">${esc(x.name)}${x.active?"":" (pausiert)"}</button>`).join("")}</div>`;
+  const st=[...c.students].sort((x,y)=>x.name.localeCompare(y.name,"de"));
+  const cols=[...s.R,...s.L1,...s.L2,...s.SP];
+  const pend=st.filter(k=>cols.some(i=>peek(k.id,a.id,i.id)?.pending)).length;
+  const grp=(n,t)=>n?`<th class="grp" colspan="${n}">${esc(t)}</th>`:"";
+  const cell=(sid,i)=>{const p=peek(sid,a.id,i.id)||{},k=`${sid}|${i.id}`;
+    if(p.done)return `<button class="c-ok" data-act="resetIsl" data-k="${k}" title="Zurücksetzen">✓${p.tries?`<span class="note"> ${p.tries}✗</span>`:""}</button>`;
+    if(p.pending)return `<button class="mini ok" data-act="approve" data-k="${k}">Heft ok</button><button class="mini" data-act="reject" data-k="${k}">nochmal</button>`;
+    if(status(a,sid,i)==="closed")return `<span class="note">·</span>`;
+    if(p.locked)return `<button class="c-lock" data-act="reset" data-k="${k}">gesperrt ↺</button>`;
+    if(p.tries)return `<button class="c-try" data-act="reset" data-k="${k}" title="Fehlversuche zurücksetzen">${p.tries}✗</button>`;
+    return `<button class="note" data-act="tick" data-k="${k}" title="Abhaken">–</button>`};
+  return h+`${pend?`<div class="infobar"><b>Kapitänskontrolle:</b> ${pend} ${pend===1?"Kind wartet":"Kinder warten"} auf dein „Heft ok“.</div>`:""}
+  <div class="panel"><div class="row" style="justify-content:space-between"><h3 style="margin:0">${esc(c.name)} · ${esc(a.name)}: ${classSum(a,c)}${a.goal!==false?` von ${classGoal(a,c)}`:""} Sternen</h3>
+    <div class="row"><button class="btn" data-act="toBeamer">Klassenkarte zeigen</button><button class="btn" data-act="exp">Als Tabelle sichern</button></div></div>
+  <p class="note">Tippe auf ein Feld: ✓ setzt die Insel zurück, „–“ hakt sie ab, „gesperrt“ und Fehlversuche werden zurückgesetzt. ↺ neben dem Namen setzt das ganze Abenteuer für dieses Kind zurück. Zurücksetzen und Abhaken brauchen zwei Tipps.</p>
+  <div class="tw"><table><thead><tr><th></th>${grp(s.R.length,"Grundlagen")}${s.fork?`<th class="grp"></th>`:""}${grp(s.L1.length,a.b1||"Weg 1")}${grp(s.L2.length,a.b2||"Weg 2")}${grp(s.SP.length,"Sprinter")}<th class="grp"></th></tr>
+  <tr><th>Name</th>${s.R.map(i=>`<th title="${esc(i.name)}">${esc(cut(i.name,14))}</th>`).join("")}${s.fork?"<th>Weg</th>":""}${[...s.L1,...s.L2,...s.SP].map(i=>`<th title="${esc(i.name)}">${esc(cut(i.name,14))}</th>`).join("")}<th>Sterne</th></tr></thead>
+  <tbody>${st.map(k=>{const ch=choiceOf(k.id,a.id);return `<tr><td>${esc(k.name)}${goalReached(a,k.id)?' <span class="c-ok" title="Ziel erreicht">⚑</span>':""} <button class="note" data-act="resetKid" data-k="${k.id}" title="Alles zurücksetzen" aria-label="${esc(k.name)} zurücksetzen">↺</button></td>${s.R.map(i=>`<td>${cell(k.id,i)}</td>`).join("")}
+    ${s.fork?`<td>${ch?`<button data-act="unchoose" data-k="${k.id}" title="Weg zurücksetzen">${ch}</button>`:'<span class="note">–</span>'}</td>`:""}
+    ${[...s.L1,...s.L2,...s.SP].map(i=>`<td>${cell(k.id,i)}</td>`).join("")}<td><b>${kidStars(a,k.id)}</b></td></tr>`}).join("")}</tbody></table></div>
+  <p class="note" id="em"></p></div>${errorPanel(a,c)}`;
+}
+function errorPanel(a,c){
+  const blocks=[];
+  a.islands.filter(i=>i.type==="code").forEach(i=>{const by={};const n=String(i.code||"").length;
+    c.students.forEach(k=>{(peek(k.id,a.id,i.id)?.errs||[]).forEach(e=>{const t=(i.traps||[]).find(t=>t.pos===e.pos&&t.d===e.d);
+      const key=(n>1?LET[e.pos]+") ":"")+(t?t.text:"andere Fehler");(by[key]||=new Set()).add(k.name)})});
+    const rows=Object.entries(by).sort((x,y)=>y[1].size-x[1].size);
+    if(rows.length)blocks.push(`<h4>${esc(i.name)}</h4>${rows.map(([k,set])=>`<div class="err-row"><b>${set.size}×</b><span>${esc(k)}</span><span class="note">${[...set].sort((x,y)=>x.localeCompare(y,"de")).map(esc).join(", ")}</span></div>`).join("")}`)});
+  return `<div class="panel"><h3>Typische Fehler</h3><p class="note">Aus allen falschen Code-Eingaben. Die Fehler-Namen kommen aus den Fallen-Tipps der Inseln. „Andere Fehler“ sind falsche Ziffern ohne passende Falle.</p>
+    ${blocks.length?blocks.join(""):`<p class="note">Noch keine falschen Eingaben.</p>`}</div>`;
+}
+function tSolutions(){
+  if(!S.adventures.length)return `<div class="empty">Noch kein Abenteuer.</div>`;
+  if(!S.adventures.find(a=>a.id===T.sol))T.sol=S.adventures[0].id;const a=S.adventures.find(x=>x.id===T.sol),s=secs(a);
+  const SECN={route:"Grundlagen",wp1:a.b1||"Weg 1",wp2:a.b2||"Weg 2",sprint:"Sprinter"},TYP={code:"Code-Insel",compare:"Vergleichs-Insel",teacher:"Lehrkraft-Insel"};
+  const card=i=>{const c=String(i.code||""),w=trapWarnings(i);
+    return `<div class="panel sol"><h3>${esc(i.name)} <span class="tag">${esc(SECN[i.sec])}</span><span class="tag">${TYP[i.type]}</span><span class="tag">${"★".repeat(+i.stars||0)}</span></h3>
+    ${i.type==="code"?(c?`<div class="codeview">${[...c].map((d,k)=>`<span>${c.length>1?`<small>${LET[k]}</small>`:""}${d}</span>`).join("")}</div>`:`<p class="c-lock">Code fehlt.</p>`):""}
+    ${(i.traps||[]).length?`<h4>Fallen</h4>${i.traps.map(t=>`<div class="err-row"><b>${LET[t.pos]}) ${esc(t.d)}</b><span>${esc(t.text)}</span></div>`).join("")}`:""}
+    ${w.length?`<p class="c-lock">${w.map(esc).join(" · ")}</p>`:""}
+    ${i.hint?`<p class="note">Hinweis für die Kinder: ${esc(i.hint)}</p>`:""}
+    <h4>Lösungsfotos${i.type==="compare"?" (sehen die Kinder nach dem Rechnen)":" (nur hier sichtbar)"}</h4>
+    <div class="phs">${(i.photos||[]).map(id=>`<div class="ph"><button data-act="zoomT" data-id="${id}" style="background:none;padding:0" aria-label="Foto groß"><img data-ph="${id}" alt="Lösungsfoto"></button><button class="x" data-act="delPh" data-isl="${i.id}" data-id="${id}" aria-label="Foto löschen">✕</button></div>`).join("")}
+      <label class="addph" for="ph-${i.id}">+ Foto aufnehmen oder wählen</label><input type="file" id="ph-${i.id}" data-ph-add="${i.id}" accept="image/*" multiple style="display:none"></div></div>`};
+  return `${S.adventures.length>1?`<div class="tabs">${S.adventures.map(x=>`<button data-act="tSol" data-id="${x.id}" aria-pressed="${x.id===a.id}">${esc(x.name)}</button>`).join("")}</div>`:""}
+    <div class="infobar">Hier liegen alle Codes, Fallen und Lösungsfotos von „${esc(a.name)}“. Gut für dich und die Schulbegleitung. Die Fotos bleiben nur auf diesem iPad und kommen mit in die Sicherung.</div>
+    ${[...s.R,...s.L1,...s.L2,...s.SP].map(card).join("")}<p class="note" id="phm"></p>`;
+}
+function importPanel(mode){
+  const r=T.imp&&T.imp.mode===mode?T.imp:null;
+  let out="";
+  if(r){const p=r.parsed;
+    out=`<div class="imp">${p.name&&mode==="new"?`<p><b>Abenteuer:</b> ${esc(p.name)}${p.goalText?` · Ziel: ${esc(p.goalText)}`:""}</p>`:""}
+      ${p.islands.length?`<p><b>${p.islands.length} ${p.islands.length===1?"Insel":"Inseln"} erkannt:</b></p><ul>${p.islands.map(i=>{const w=trapWarnings(i);
+        return `<li>${esc(i.name)} · ${i.type==="code"?`Code ${esc(i.code||"?")}`:i.type==="compare"?"Vergleich (Foto danach hinzufügen)":"Lehrkraft"} · ${i.stars} ★${i.traps.length?` · ${i.traps.length} ${i.traps.length===1?"Falle":"Fallen"}`:""}${i.sec!=="route"?` · ${({wp1:"Wahlpflicht 1",wp2:"Wahlpflicht 2",sprint:"Sprinter"})[i.sec]}`:""}${w.length?` <span class="bad">(${w.map(esc).join(", ")})</span>`:""}</li>`}).join("")}</ul>`:`<p class="bad">Keine INSEL-Zeile gefunden.</p>`}
+      ${p.errors.length?`<ul class="bad">${p.errors.map(e=>`<li>${esc(e)}</li>`).join("")}</ul>`:""}
+      ${p.islands.length?`<button class="btn pri" data-act="impGo">${mode==="new"?"Abenteuer anlegen":"Inseln hinzufügen"}</button>`:""}</div>`}
+  return `<div class="panel"><h3>${mode==="new"?"Abenteuer aus Import-Text anlegen":"Inseln aus Import-Text hinzufügen"}</h3>
+    <p class="note">Den Import-Text bekommst du aus dem KI-Chat, zusammen mit Rätselblatt und Lösungsblatt. Kopiere dafür die Vorlage in einen neuen Chat und ergänze Thema und Klasse.</p>
+    <textarea id="imp-${mode}" placeholder="INSEL: Rätsel 1&#10;STERNE: 1&#10;CODE: 78439&#10;FALLE: c 5 = Übertrag vergessen">${r?esc(r.text):""}</textarea>
+    <div class="row" style="margin-top:8px"><button class="btn pri" data-act="impCheck" data-mode="${mode}">Prüfen</button><button class="btn" data-act="copyPrompt">Vorlage für den KI-Chat kopieren</button><span class="note" id="cpm-${mode}"></span></div>
+    ${out}<textarea id="cpbox-${mode}" readonly style="display:none;margin-top:8px">${esc(KI_VORLAGE)}</textarea></div>`;
+}
+function tAdvList(){
+  return `<div class="panel"><h3>Neues Abenteuer</h3><div class="row"><input type="text" id="an" placeholder="z. B. Brüche (Lernplan)" style="flex:1;min-width:220px"><button class="btn pri" data-act="newAdv">Anlegen</button></div></div>
+  <div class="panel"><h3>Abenteuer sichern und übertragen</h3>
+    <p class="note">Speichert Inseln, Codes, Fallen-Tipps und Lösungsfotos als Datei, ohne Namen und ohne Fortschritt. So kannst du die Abenteuer in eine neue Version oder auf ein anderes iPad laden oder mit Kolleginnen teilen.</p>
+    <div class="row"><button class="btn pri" data-act="expAll" ${S.adventures.length?"":"disabled"}>Alle Abenteuer exportieren</button><label class="btn" for="af">Abenteuer aus Datei laden</label><input type="file" id="af" accept=".json,application/json" style="display:none"></div>
+    <p class="note" id="axm"></p></div>
+  ${importPanel("new")}
+  ${S.adventures.length?S.adventures.map(a=>{const names=a.classIds.map(id=>S.classes.find(c=>c.id===id)?.name).filter(Boolean);
+    return `<div class="panel"><div class="row" style="justify-content:space-between"><div><h3 style="margin:0">${esc(a.name)}</h3>
+      <p class="note" style="margin:4px 0 0">${a.active?"aktiv":"pausiert"} · ${a.islands.length} Inseln · ${names.length?esc(names.join(", ")):"noch keiner Klasse zugeordnet"}</p></div>
+      <div class="row"><button class="btn pri" data-act="editAdv" data-id="${a.id}">Bearbeiten</button><button class="btn" data-act="copyAdv" data-id="${a.id}">Kopieren</button><button class="btn" data-act="expOne" data-id="${a.id}">Exportieren</button><button class="btn warn" data-act="delAdv" data-id="${a.id}">Löschen</button></div></div></div>`}).join(""):`<div class="empty">Noch kein Abenteuer.</div>`}`;
+}
+function tEdit(){
+  const a=S.adventures.find(x=>x.id===T.edit);if(!a){T.edit=null;return tAdvList()}
+  const s=secs(a);
+  const row=(i,list)=>{const k=list.indexOf(i);
+    let ext="";
+    let traps="";
+    if(i.type==="code"){ext=`<input type="text" inputmode="numeric" data-if="code" data-id="${i.id}" value="${esc(i.code)}" placeholder="Code, z. B. 47291" class="${i.code?"":"miss"}" aria-label="Code">`;
+      const w=trapWarnings(i).filter(x=>x!=="Code fehlt");
+      traps=`<details><summary>Fallen-Tipps (${i.traps.length})${w.length?` <span class="c-lock">· ${w.map(esc).join(", ")}</span>`:""}</summary>
+        <textarea data-if="traps" data-id="${i.id}" placeholder="c 7 = Übertrag vergessen" aria-label="Fallen-Tipps">${esc(i.traps.map(trapLine).join("\n"))}</textarea>
+        <p class="note">Eine Falle pro Zeile: Teilaufgabe, Ziffer der Falle, =, kurzer Tipp. Tippt ein Kind diese Ziffer, sieht es den Tipp.</p></details>`}
+    if(i.type==="compare"){ext=`<div class="ext"><input type="text" data-if="hint" data-id="${i.id}" value="${esc(i.hint)}" placeholder="Zusätzlicher Hinweis (freiwillig)" aria-label="Hinweis zur Lösung"></div>`;
+      traps=`<div style="grid-column:1/-1"><p class="note" style="margin:4px 0 0">Lösungsfoto: Das sehen die Kinder nach „Ja, Lösung vergleichen“.${i.photos.length?"":` <span class="c-lock">Noch kein Foto. Ohne Foto sehen die Kinder nur den Hinweis.</span>`}</p>
+        <div class="phs">${i.photos.map(id=>`<div class="ph"><button data-act="zoomT" data-id="${id}" style="background:none;padding:0" aria-label="Foto groß"><img data-ph="${id}" alt="Lösungsfoto"></button><button class="x" data-act="delPh" data-isl="${i.id}" data-id="${id}" aria-label="Foto löschen">✕</button></div>`).join("")}
+        <label class="addph" for="ph-${i.id}">+ Foto aufnehmen oder wählen</label><input type="file" id="ph-${i.id}" data-ph-add="${i.id}" accept="image/*" multiple style="display:none"></div></div>`}
+    if(i.type==="teacher")ext=`<span class="note">Kinder können hier nichts eingeben. Du hakst in der Übersicht ab, z. B. für Plakat, Zeichnung oder Vortrag.</span>`;
+    const after=i.sec==="sprint"?`<label class="note" style="display:flex;gap:6px;align-items:center;grid-column:1/-1">erreichbar ab <select data-if="after" data-id="${i.id}"><option value="">Start</option>${s.R.map(r=>`<option value="${r.id}" ${i.after===r.id?"selected":""}>nach ${esc(r.name)}</option>`).join("")}</select></label>`:"";
+    return `<div class="isl-row"><input type="text" data-if="name" data-id="${i.id}" value="${esc(i.name)}" aria-label="Name der Insel">
+      <select data-if="type" data-id="${i.id}" aria-label="Art"><option value="code" ${i.type==="code"?"selected":""}>Code-Insel</option><option value="compare" ${i.type==="compare"?"selected":""}>Vergleichs-Insel</option><option value="teacher" ${i.type==="teacher"?"selected":""}>Lehrkraft-Insel</option></select>
+      <select data-if="stars" data-id="${i.id}" aria-label="Sterne">${[1,2,3,4,5].map(n=>`<option value="${n}" ${+i.stars===n?"selected":""}>${n} ★</option>`).join("")}</select>
+      ${ext}<div class="ctl"><button class="btn sm" data-act="mvIsl" data-id="${i.id}" data-d="-1" ${k===0?"disabled":""} aria-label="Nach oben">↑</button><button class="btn sm" data-act="mvIsl" data-id="${i.id}" data-d="1" ${k===list.length-1?"disabled":""} aria-label="Nach unten">↓</button><button class="btn sm warn" data-act="delIsl" data-id="${i.id}" aria-label="Insel löschen">✕</button></div>${after}${traps}</div>`};
+  const sec=(key,title,note,cls)=>{const L=a.islands.filter(i=>i.sec===key);return `<div class="sec ${cls||""}"><h4>${title}</h4>${note?`<p class="note" style="margin:-4px 0 6px">${note}</p>`:""}
+    ${L.map(i=>row(i,L)).join("")}<div class="row" style="margin-top:8px"><button class="btn sm" data-act="addIsl" data-sec="${key}">+ Insel</button></div></div>`};
+  const ex=S.classes[0];
+  return `<div class="row" style="margin-bottom:12px"><button class="back" data-act="endEdit">← Alle Abenteuer</button></div>
+  <div class="panel"><h3>Abenteuer</h3><div class="fields">
+    <label>Name<input type="text" data-af="name" value="${esc(a.name)}"></label>
+    ${a.goal!==false?`<label>Ziel für die Klasse (Belohnung)<input type="text" data-af="goalText" value="${esc(a.goalText||"")}" placeholder="z. B. Spielestunde"></label>
+    <label>Sterne pro Kind im Schnitt bis zum Ziel<input type="number" min="1" data-af="goalPerKid" value="${a.goalPerKid||""}" placeholder="${pflicht(a)}"></label>`:""}</div>
+    <label class="cb" style="margin-top:10px"><input type="checkbox" data-af="goal" ${a.goal!==false?"checked":""}> Klassenziel mit gemeinsamer Schatzkiste</label>
+    ${a.goal!==false?`<p class="note" id="goalNote">${goalNote(a)}</p>`:`<p class="note">Ohne Klassenziel sehen die Kinder nur ihre eigenen Sterne. Die Klassenkarte zeigt dann nur die Inseln.</p>`}
+    <div class="row" style="margin-top:10px;gap:18px">
+      <label class="cb"><input type="checkbox" data-af="active" ${a.active?"checked":""}> aktiv (Kinder sehen es)</label>
+      <label class="cb"><input type="checkbox" data-af="chest" ${a.chest!==false?"checked":""}> Schatztruhe beim Code (öffnet sich, Münzen fliegen)</label>
+</div>
+    <p class="note">Die Kinder fahren immer vorwärts: Es ist nur die nächste Insel offen. Die Weggabelung kommt nach allen Grundlagen, Sprinter nach ihrer Abzweigung.</p>
+    <h4>Klassen</h4><div class="row" style="gap:18px">${S.classes.length?S.classes.map(c=>`<label class="cb"><input type="checkbox" data-acl="${c.id}" ${a.classIds.includes(c.id)?"checked":""}> ${esc(c.name)}</label>`).join(""):'<span class="note">Lege zuerst unter „Klassen“ eine Klasse an.</span>'}</div></div>
+  <div class="panel"><h3>Inseln</h3>
+    ${sec("route","Grundlagen","Die Hauptroute. Alle Kinder fahren sie.")}
+    <div class="sec wp"><h4>Wahlpflicht</h4><p class="note" style="margin:-4px 0 6px">An der Weggabelung entscheidet sich jedes Kind für einen Weg. Leer lassen, wenn es keine Wahl gibt.</p>
+      <div class="fields"><label>Name Weg 1<input type="text" data-af="b1" value="${esc(a.b1||"")}"></label><label>Name Weg 2<input type="text" data-af="b2" value="${esc(a.b2||"")}"></label></div></div>
+    ${sec("wp1",esc(a.b1||"Weg 1"),"","wp")}${sec("wp2",esc(a.b2||"Weg 2"),"","wp")}
+    ${sec("sprint","Sprinter","Freiwillige Abstecher für Extra-Sterne. Sie zählen nicht für das Ziel.","sp")}
+    <p class="note" style="margin-top:12px"><b>Code-Insel:</b> Kinder tippen den Code von der Schatzkarte. <b>Vergleichs-Insel:</b> Kinder sehen dein Lösungsfoto und bestätigen „fertig verglichen“. <b>Lehrkraft-Insel:</b> Nur du hakst ab. Alle Codes und Fotos auf einen Blick findest du unter „Lösungen“.</p></div>
+  ${importPanel("add")}
+  <div class="panel"><h3>So sieht die Karte aus</h3><div class="map" id="preview">${mapSvg(a,{mode:"preview"})}</div></div>`;
+}
+function goalNote(a){const c=S.classes.find(x=>a.classIds.includes(x.id));
+  return `Pflicht-Sterne pro Kind: ${pflicht(a)}, mit allen Sprintern bis zu ${maxStars(a)}.${c?` Für ${esc(c.name)} (${c.students.length} Kinder) heißt das: Ziel bei ${classGoal(a,c)} Sternen.`:""}`}
+function tClasses(){
+  return `<div class="panel"><h3>Neue Klasse</h3>
+    <div class="row" style="margin-bottom:10px"><input type="text" id="cn" placeholder="z. B. 6b"></div>
+    <p class="note">Namen einfügen: In Excel die Spalte mit den Namen markieren, kopieren und hier einfügen, ein Name pro Zeile. Oder eine Excel- bzw. CSV-Datei wählen (es wird die erste Spalte genommen).</p>
+    <textarea id="cl" placeholder="Ein Name pro Zeile"></textarea>
+    <div class="row" style="margin-top:10px"><input type="file" id="cf" accept=".xlsx,.xls,.csv,.txt"><button class="btn pri" data-act="addClass">Klasse anlegen</button></div>
+    <p class="note" id="cm"></p>
+    <p class="note">Die Namen bleiben nur auf diesem Gerät, in diesem Browser. Sie werden nirgends hochgeladen.</p></div>
+    ${S.classes.map(c=>`<div class="panel"><div class="row" style="justify-content:space-between"><h3 style="margin:0">${esc(c.name)} · ${c.students.length} Kinder</h3>
+      <div class="row"><button class="btn" data-act="addKid" data-id="${c.id}">Kind hinzufügen</button><button class="btn warn" data-act="resetCls" data-id="${c.id}">Fortschritt löschen</button><button class="btn warn" data-act="delCls" data-id="${c.id}">Klasse löschen</button></div></div></div>`).join("")}`;
+}
+function tSettings(){
+  const ds=daysSince(S.lastBackup);
+  return `<div class="panel"><h3>Fehlversuche pro Code-Insel</h3>
+    <p class="note">Nach so vielen falschen Eingaben ist die Insel gesperrt, bis du sie in der Übersicht freischaltest. 0 = unbegrenzt.</p>
+    <div class="row"><input type="number" id="mt" min="0" max="9" value="${S.maxTries}" style="width:90px"><button class="btn pri" data-act="saveTries">Speichern</button></div></div>
+  <div class="panel"><h3>Kapitänskontrolle bei Vergleichs-Inseln</h3>
+    <p class="note">So oft wird ein Kind nach dem Vergleichen zufällig zu dir geschickt. Die Sterne gibt es dann erst nach deinem „Heft ok“.</p>
+    <div class="row"><select id="cr">${[[0,"nie"],[.2,"etwa jedes 5. Mal"],[.25,"etwa jedes 4. Mal"],[.34,"etwa jedes 3. Mal"],[.5,"etwa jedes 2. Mal"],[1,"immer"]].map(([v,l])=>`<option value="${v}" ${+S.checkRate===v?"selected":""}>${l}</option>`).join("")}</select><button class="btn pri" data-act="saveRate">Speichern</button></div></div>
+  <div class="panel"><h3>Dein Name für die Kinder</h3><p class="note">Erscheint in „Frag …“ und „Zeig dein Heft …“.</p>
+    <div class="row"><input type="text" id="tn" value="${esc(S.teacher)}"><button class="btn pri" data-act="saveName">Speichern</button></div></div>
+  <div class="panel"><h3>Ton</h3><label class="cb"><input type="checkbox" id="snd" ${S.sound?"checked":""}> Kurzer Klang bei richtigem und falschem Code</label></div>
+  <div class="panel"><h3>Sicherung</h3>
+    <p class="note">Speichert alles (Klassen mit Namen, Abenteuer, Fortschritt, Lösungsfotos) als Datei auf dieses iPad, zum Beispiel in „Dateien“. Damit kannst du nach einem Browser-Problem alles wiederherstellen. Die Datei enthält Namen: Lass sie auf deinem Gerät.</p>
+    <p class="note">${ds===null?"Noch keine Sicherung gespeichert.":`Letzte Sicherung: vor ${ds} ${ds===1?"Tag":"Tagen"}.`}</p>
+    <div class="row"><button class="btn pri" data-act="backup">Sicherung speichern</button><label class="btn" for="rf">Sicherung laden</label><input type="file" id="rf" accept=".json,application/json" style="display:none"></div>
+    <p class="note" id="bm"></p></div>
+  <div class="panel"><h3>PIN ändern</h3><div class="row"><input type="password" inputmode="numeric" id="np" placeholder="Neue PIN"><button class="btn" data-act="savePin">Ändern</button></div><p class="note" id="sm"></p></div>`;
+}
+const getEl=id=>document.getElementById(id);
+function bindTeacher(){
+  const cf=getEl("cf");
+  if(cf)cf.onchange=async()=>{const f=cf.files[0];if(!f)return;getEl("cm").textContent="Lese Datei …";
+    try{const names=await readFile(f);getEl("cl").value=names.join("\n");getEl("cm").textContent=names.length+" Namen gefunden. Bitte prüfen und dann „Klasse anlegen“."}
+    catch(e){getEl("cm").textContent="Die Datei konnte nicht gelesen werden. Kopiere die Namen stattdessen hinein."}};
+  const rf=getEl("rf");
+  if(rf)rf.onchange=async()=>{const f=rf.files[0];if(!f)return;const bm=getEl("bm");
+    try{const d=JSON.parse(await f.text());if(!d||!Array.isArray(d.classes)||!Array.isArray(d.adventures))throw 0;
+      bm.innerHTML=`Sicherung mit ${d.classes.length} Klassen und ${d.adventures.length} Abenteuern gefunden. Der jetzige Stand wird ersetzt. <button class="btn sm warn" id="rgo">Ja, ersetzen</button>`;
+      getEl("rgo").onclick=async()=>{const photos=d.photos||{};delete d.photos;
+        try{for(const [id,v] of Object.entries(photos)){await DB.put(id,v);PH[id]=v}}catch(e){toast("Die Fotos konnten nicht alle geladen werden.")}
+        S=Object.assign(blank(),d);normalize();save();T.unlocked=true;render();toast("Sicherung geladen.")}}
+    catch(e){bm.textContent="Diese Datei ist keine Sicherung der Kapitäns-Karte."}};
+  const af=getEl("af");
+  if(af)af.onchange=async()=>{const f=af.files[0];if(!f)return;const m=getEl("axm");
+    try{const d=JSON.parse(await f.text());const list=Array.isArray(d.adventures)?d.adventures:null;if(!list||!list.length)throw 0;
+      const photos=d.photos||{};for(const [id,v] of Object.entries(photos)){await DB.put(id,v);PH[id]=v}
+      list.forEach(src=>{const a=JSON.parse(JSON.stringify(src)),map={};a.id=uid();a.classIds=[];a.active=true;
+        a.islands=(a.islands||[]).map(i=>{const o=i.id;i=Object.assign(mkIsl(i.name||"Insel","code",1,"route"),i);i.id=uid();map[o]=i.id;return i});
+        a.islands.forEach(i=>{if(i.after)i.after=map[i.after]||""});
+        if(S.adventures.some(x=>x.name===a.name))a.name+=" (geladen)";S.adventures.push(a)});
+      normalize();save();render();toast(`${list.length} ${list.length===1?"Abenteuer":"Abenteuer"} geladen. Ordne ${list.length===1?"es":"sie"} unter „Bearbeiten“ einer Klasse zu.`)}
+    catch(e){if(m)m.textContent="In dieser Datei habe ich keine Abenteuer gefunden."}};
+  const snd=getEl("snd");if(snd)snd.onchange=()=>{S.sound=snd.checked;save();if(S.sound)sfx("win")};
+}
+// Felder im Abenteuer-Editor
+app.addEventListener("input",e=>{const t=e.target;if(t.dataset.if==="code"){const v=t.value.replace(/\D/g,"").slice(0,12);if(v!==t.value)t.value=v}});
+app.addEventListener("change",async e=>{
+  const t=e.target;
+  if(t.dataset.phAdd&&V.s==="teacher"){const isl=S.adventures.flatMap(a=>a.islands).find(i=>i.id===t.dataset.phAdd);const files=[...t.files];if(!isl||!files.length)return;
+    const m=getEl("phm");toast(files.length>1?`${files.length} Fotos werden gespeichert …`:"Foto wird gespeichert …");
+    try{for(const f of files){const data=await compress(f),id=uid();await DB.put(id,data);PH[id]=data;isl.photos.push(id)}save();render();toast("Gespeichert.")}
+    catch(err){if(m)m.textContent="Das Foto konnte nicht gespeichert werden. Ist der Speicher voll?";toast("Foto nicht gespeichert.")}
+    return}
+  const a=S.adventures.find(x=>x.id===T.edit);if(!a||V.s!=="teacher")return;
+  if(t.dataset.af){const f=t.dataset.af;a[f]=t.type==="checkbox"?t.checked:f==="goalPerKid"?(parseInt(t.value,10)||0):t.value.trim();save();
+    if(f==="b1"||f==="b2"||f==="goal")return render();refreshPreview(a);return}
+  if(t.dataset.acl){const id=t.dataset.acl;a.classIds=t.checked?[...new Set([...a.classIds,id])]:a.classIds.filter(x=>x!==id);save();refreshPreview(a);return}
+  if(t.dataset.if){const i=a.islands.find(x=>x.id===t.dataset.id);if(!i)return;const f=t.dataset.if;
+    if(f==="traps"){const lines=t.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);const ok=lines.map(parseTrap);
+      i.traps=ok.filter(Boolean);save();if(ok.some(x=>!x))toast("Eine Zeile verstehe ich nicht. Bitte so: c 7 = Übertrag vergessen");return}
+    i[f]=f==="stars"?+t.value:f==="parts"?Math.max(1,Math.min(16,parseInt(t.value,10)||1)):t.value.trim();
+    if(f==="code")t.classList.toggle("miss",!i.code);
+    save();if(f==="type")return render();refreshPreview(a)}
+});
+function refreshPreview(a){const p=getEl("preview");if(p)p.innerHTML=mapSvg(a,{mode:"preview"});const g=getEl("goalNote");if(g)g.innerHTML=goalNote(a)}
+const findP=k=>{const [sid,iid]=k.split("|");return {sid,iid,p:IP(sid,T.aid,iid)}};
+const TACT={
+  setPin:()=>{const a=getEl("p1").value.trim(),b=getEl("p2").value.trim(),pm=getEl("pm");
+    if(!/^\d{4,}$/.test(a)){pm.textContent="Bitte mindestens 4 Ziffern.";return}if(a!==b){pm.textContent="Die PINs sind nicht gleich.";return}
+    S.pin=a;save();T.unlocked=true;render()},
+  tryPin:()=>{const pin=getEl("pin");if(pin.value.trim()===S.pin){T.unlocked=true;render()}else{getEl("pm").textContent="Falsche PIN.";pin.value=""}},
+  tab:d=>{T.tab=d.t;T.edit=null;T.imp=null;render()},
+  tSol:d=>{T.sol=d.id;render()}, zoomT:d=>zoom(d.id),
+  delPh:(d,b)=>{if(!confirmInline(b,"?"))return;const isl=S.adventures.flatMap(a=>a.islands).find(i=>i.id===d.isl);if(isl)isl.photos=isl.photos.filter(x=>x!==d.id);save();gcPhotos();render()},
+  impCheck:d=>{const text=getEl("imp-"+d.mode).value;T.imp={mode:d.mode,text,parsed:parseImport(text)};render()},
+  impGo:()=>{const r=T.imp;if(!r)return;const p=r.parsed;let a;
+    if(r.mode==="new"){a={id:uid(),name:p.name||"Importiertes Abenteuer",classIds:T.cls?[T.cls]:[],active:true,seq:false,forkAfterBase:true,b1:p.b1||"Wahlpflicht 1",b2:p.b2||"Wahlpflicht 2",goalPerKid:0,goalText:p.goalText||"",islands:[]};S.adventures.unshift(a)}
+    else{a=S.adventures.find(x=>x.id===T.edit);if(!a)return;if(p.b1)a.b1=p.b1;if(p.b2)a.b2=p.b2;if(p.goalText&&!a.goalText)a.goalText=p.goalText}
+    a.islands.push(...p.islands);
+    p.islands.forEach(i=>{if(i._after){const t=a.islands.find(x=>x.sec==="route"&&x.name.toLowerCase()===i._after.toLowerCase());i.after=t?t.id:""}delete i._after});
+    save();T.imp=null;T.edit=a.id;T.tab="adv";render();toast(`${p.islands.length} ${p.islands.length===1?"Insel":"Inseln"} übernommen.`)},
+  copyPrompt:async(d,b)=>{const mode=b.parentElement.querySelector("[data-mode]").dataset.mode,m=getEl("cpm-"+mode);
+    try{await navigator.clipboard.writeText(KI_VORLAGE);m.textContent="Kopiert. Füge sie in einen neuen Chat ein."}
+    catch(e){const box=getEl("cpbox-"+mode);box.style.display="block";box.style.minHeight="260px";box.focus();box.select();m.textContent="Kopieren ging nicht automatisch. Markiere den Text unten und kopiere ihn."}}, tCls:d=>{T.cls=d.id;render()}, tAdv:d=>{T.aid=d.id;render()},
+  undo:(d,b)=>{if(!confirmInline(b,"zurück?"))return;const {p}=findP(d.k);p.done=false;p.pending=false;save();render()},
+  resetIsl:(d,b)=>{if(!confirmInline(b,"zurück?"))return;const {p}=findP(d.k);Object.assign(p,{done:false,pending:false,tries:0,locked:false});save();render()},
+  resetKid:(d,b)=>{if(!confirmInline(b,"alles zurück?"))return;if(S.progress[d.k])delete S.progress[d.k][T.aid];save();render()},
+  approve:d=>{const {p}=findP(d.k);p.pending=false;p.done=true;save();render()},
+  reject:d=>{const {p}=findP(d.k);p.pending=false;p.done=false;save();render()},
+  reset:d=>{const {p}=findP(d.k);p.tries=0;p.locked=false;save();render()},
+  tick:(d,b)=>{if(!confirmInline(b,"abhaken?"))return;const {p}=findP(d.k);p.done=true;p.at=Date.now();save();render()},
+  unchoose:(d,b)=>{if(!confirmInline(b,"Weg löschen?"))return;AP(d.k,T.aid).choice=null;save();render()},
+  toBeamer:()=>{T.unlocked=false;go({s:"beamer",cls:T.cls,aid:T.aid})},
+  exp:()=>exportCsv(),
+  newAdv:()=>{const n=getEl("an").value.trim()||"Neues Abenteuer";const a={id:uid(),name:n,classIds:T.cls?[T.cls]:[],active:true,seq:false,forkAfterBase:true,b1:"Wahlpflicht 1",b2:"Wahlpflicht 2",goalPerKid:0,goalText:"",islands:[mkIsl("Insel 1","code",1,"route")]};
+    S.adventures.unshift(a);save();T.edit=a.id;render()},
+  editAdv:d=>{T.edit=d.id;render()}, endEdit:()=>{T.edit=null;render()},
+  copyAdv:d=>{const a=S.adventures.find(x=>x.id===d.id);const map={};const b=JSON.parse(JSON.stringify(a));b.id=uid();b.name=a.name+" (Kopie)";b.classIds=[];b.active=false;
+    b.islands.forEach(i=>{const o=i.id;i.id=uid();map[o]=i.id});b.islands.forEach(i=>{if(i.after)i.after=map[i.after]||""});
+    S.adventures.splice(S.adventures.indexOf(a)+1,0,b);save();render();toast("Kopie angelegt. Ordne sie einer Klasse zu und schalte sie aktiv.")},
+  delAdv:(d,b)=>{if(!confirmInline(b,"Wirklich löschen?"))return;S.adventures=S.adventures.filter(x=>x.id!==d.id);Object.values(S.progress).forEach(p=>delete p[d.id]);save();gcPhotos();render()},
+  addIsl:d=>{const a=S.adventures.find(x=>x.id===T.edit);a.islands.push(mkIsl("Neue Insel","code",1,d.sec));save();render()},
+  mvIsl:d=>{const a=S.adventures.find(x=>x.id===T.edit),i=a.islands.find(x=>x.id===d.id);const L=a.islands.filter(x=>x.sec===i.sec),k=L.indexOf(i),j=k+(+d.d);
+    if(j<0||j>=L.length)return;const A=a.islands.indexOf(i),B=a.islands.indexOf(L[j]);[a.islands[A],a.islands[B]]=[a.islands[B],a.islands[A]];save();render()},
+  delIsl:(d,b)=>{if(!confirmInline(b,"löschen?"))return;const a=S.adventures.find(x=>x.id===T.edit);a.islands=a.islands.filter(x=>x.id!==d.id);a.islands.forEach(i=>{if(i.after===d.id)i.after=""});save();gcPhotos();render()},
+  addClass:()=>{const name=getEl("cn").value.trim(),names=[...new Set(getEl("cl").value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean))],cm=getEl("cm");
+    if(!name){cm.textContent="Bitte einen Klassennamen eingeben.";return}if(!names.length){cm.textContent="Bitte Namen einfügen.";return}
+    const c={id:uid(),name,students:names.map(n=>({id:uid(),name:n}))};S.classes.push(c);T.cls=c.id;save();T.tab="adv";render();toast("Klasse angelegt. Ordne ihr jetzt ein Abenteuer zu.")},
+  addKid:(d,b)=>{const row=b.parentElement;if(row.querySelector("input"))return;const i=document.createElement("input");i.type="text";i.placeholder="Name";i.id="kn";
+    const ok=document.createElement("button");ok.className="btn pri";ok.textContent="Hinzufügen";row.prepend(ok);row.prepend(i);i.focus();
+    ok.onclick=ev=>{ev.stopPropagation();const n=i.value.trim();if(!n)return;S.classes.find(c=>c.id===d.id).students.push({id:uid(),name:n});save();render()}},
+  resetCls:(d,b)=>{if(!confirmInline(b,"Wirklich zurücksetzen?"))return;S.classes.find(c=>c.id===d.id).students.forEach(s=>delete S.progress[s.id]);save();render()},
+  delCls:(d,b)=>{if(!confirmInline(b,"Wirklich löschen?"))return;const c=S.classes.find(x=>x.id===d.id);c.students.forEach(s=>delete S.progress[s.id]);
+    S.classes=S.classes.filter(x=>x!==c);S.adventures.forEach(a=>a.classIds=a.classIds.filter(id=>id!==c.id));save();render()},
+  saveTries:()=>{S.maxTries=Math.max(0,Math.min(9,parseInt(getEl("mt").value,10)||0));save();toast("Gespeichert.")},
+  saveRate:()=>{S.checkRate=+getEl("cr").value;save();toast("Gespeichert.")},
+  saveName:()=>{S.teacher=getEl("tn").value.trim()||"deine Lehrkraft";save();toast("Gespeichert.")},
+  savePin:()=>{const v=getEl("np").value.trim();if(!/^\d{4,}$/.test(v)){getEl("sm").textContent="Mindestens 4 Ziffern.";return}S.pin=v;save();getEl("sm").textContent="PIN geändert."},
+  backup:()=>backup(),
+  expAll:()=>exportAdvs(S.adventures),
+  expOne:d=>exportAdvs(S.adventures.filter(a=>a.id===d.id)),
+};
+async function readFile(f){
+  const buf=await f.arrayBuffer();
+  if(/\.(csv|txt)$/i.test(f.name)||!window.XLSX){const t=new TextDecoder().decode(buf);return t.split(/\r?\n/).map(l=>l.split(/[;,\t]/)[0].trim()).filter(Boolean)}
+  const wb=XLSX.read(buf,{type:"array"}),ws=wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(ws,{header:1,blankrows:false}).map(r=>String(r[0]??"").trim()).filter(Boolean);
+}
+async function saveFile(filename,data,el){
+  el=el||{};
+  // 1) Im Claude-Artefakt: Speichern über die Plattform
+  if(window.claude&&window.claude.use){
+    try{const d=await window.claude.use("downloads");if(d){await d.save({filename,data});el.textContent="Gesichert.";return true}}
+    catch(e){el.textContent=e&&e.code==="declined"?"Abgebrochen.":"Sichern hat nicht geklappt.";return false}
+  }
+  // 2) Home-Bildschirm-App auf dem iPad: Teilen-Menü („In Dateien sichern“)
+  const type=/\.csv$/i.test(filename)?"text/csv":"application/json";
+  try{const file=new File([data],filename,{type});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:filename});el.textContent="Gesichert. Tipp im Teilen-Menü auf „In Dateien sichern“.";return true}}
+  catch(e){if(e&&e.name==="AbortError"){el.textContent="Abgebrochen.";return false}}
+  // 3) Sonst: normaler Download
+  try{const url=URL.createObjectURL(new Blob([data],{type}));const a=document.createElement("a");a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);el.textContent="Gesichert.";return true}
+  catch(e){el.textContent="Sichern hat nicht geklappt.";return false}
+}
+async function exportCsv(){
+  const c=S.classes.find(x=>x.id===T.cls),a=S.adventures.find(x=>x.id===T.aid),s=secs(a),cols=[...s.R,...s.L1,...s.L2,...s.SP];
+  const q=v=>`"${String(v).replace(/"/g,'""')}"`;
+  const lines=[["Name",...cols.map(i=>i.name),"Weg","Sterne"].map(q).join(";")];
+  [...c.students].sort((x,y)=>x.name.localeCompare(y.name,"de")).forEach(k=>{const ch=choiceOf(k.id,a.id);
+    lines.push([k.name,...cols.map(i=>{const p=peek(k.id,a.id,i.id);return p?.done?"geschafft":p?.pending?"Kontrolle offen":p?.locked?"gesperrt":p?.tries?p.tries+" Fehlversuche":""}),ch?(ch===1?a.b1:a.b2):"",kidStars(a,k.id)].map(q).join(";"))});
+  await saveFile(`Kapitaens-Karte_${c.name}_${a.name}.csv`.replace(/[\\/:*?"<>|]/g,"-"),"﻿"+lines.join("\r\n"),getEl("em"));
+}
+async function exportAdvs(list){
+  const photos={};for(const a of list)for(const i of a.islands)for(const id of i.photos||[]){if(!photos[id]){const v=await photo(id);if(v)photos[id]=v}}
+  const d=new Date(),stamp=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  const data={kind:"kapitaens-karte-abenteuer",v:1,exported:stamp,adventures:list.map(a=>({...a,classIds:[]})),photos};
+  const name=(list.length===1?`Abenteuer_${list[0].name}_${stamp}`:`Abenteuer_alle_${stamp}`).replace(/[\\/:*?"<>|]/g,"-")+".json";
+  await saveFile(name,JSON.stringify(data),getEl("axm")||{});
+}
+async function backup(){
+  const d=new Date(),stamp=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  const photos={};for(const a of S.adventures)for(const i of a.islands)for(const id of i.photos||[]){if(!photos[id]){const v=await photo(id);if(v)photos[id]=v}}
+  const ok=await saveFile(`Kapitaens-Karte_Sicherung_${stamp}.json`,JSON.stringify({...S,photos}),getEl("bm")||{});
+  if(ok){S.lastBackup=Date.now();save();setTimeout(render,900)}
+}
+const baseRender=render;
+render=function(){baseRender();fillPhotos()};
+render();
+</script>
+<script>
+if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.serviceWorker.register("sw.js").catch(()=>{})})}
+window.APP_VERSION="20261117-1839";
+</script>
+</body>
+</html>
