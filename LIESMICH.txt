@@ -1,3 +1,3 @@
-Kapitäns-Karte, Home-Bildschirm-Version 20261118-1628
+Kapitäns-Karte, Home-Bildschirm-Version 20261118-1756
 Alle Dateien zusammen hochladen (z. B. GitHub Pages). Enthält keine Namen und keine Daten: Die bleiben auf dem iPad.
 Schriften: Nunito und Pirata One (SIL Open Font License). Excel-Leser: SheetJS (Apache 2.0).

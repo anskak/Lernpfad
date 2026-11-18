@@ -369,6 +369,7 @@ function parseImport(txt){txt=cleanImport(txt);
     else if(k==="vergleich"){cur.cmpText=v;if(cur.code&&cur.type!=="teacher")cur.type="mixed"}
     else if(k==="art"){const t=ART[v.toLowerCase()];if(t)cur.type=t;else out.errors.push(`Zeile ${n+1}: Art „${v}“ kenne ich nicht (Code, Vergleich, Gemischt, Lehrkraft).`)}
     else if(k==="abschnitt"||k==="bereich"){const t=SEC[v.toLowerCase()];if(t)cur.sec=t;else out.errors.push(`Zeile ${n+1}: Abschnitt „${v}“ kenne ich nicht (Grundlagen, Wahlpflicht 1, Wahlpflicht 2, Sprinter).`)}
+    else if(k==="kontrolle"){const x=v.toLowerCase();cur.check=/^(ja|an|immer)/.test(x)?"on":/^(nein|aus|nie)/.test(x)?"off":""}
     else if(k==="teile"){cur.parts=Math.max(1,Math.min(16,parseInt(v,10)||1))}
     else if(k==="hinweis"){cur.hint=v}
     else if(k==="ab"){cur._after=v}
@@ -424,6 +425,7 @@ CODE: 495
 const RATES=[[0,"nie"],[0.1,"etwa jedes 10. Mal"],[1/7,"etwa jedes 7. Mal"],[0.2,"etwa jedes 5. Mal"],[0.25,"etwa jedes 4. Mal"],[1/3,"etwa jedes 3. Mal"],[0.5,"etwa jedes 2. Mal"],[1,"immer"]];
 const sameRate=(x,y)=>x!=null&&x!==""&&Math.abs(+x-+y)<1e-6;
 const rateOptions=(cur,extra)=>(extra?`<option value="" ${cur==null||cur===""?"selected":""}>${extra}</option>`:"")+RATES.map(([v,l])=>`<option value="${v}" ${sameRate(cur,v)?"selected":""}>${l}</option>`).join("");
+function checkEnabled(a,i){if(i.check==="on")return true;if(i.check==="off")return false;if(i.type==="code")return !!a.codeCheck;return i.type==="compare"||i.type==="mixed"}
 function rateFor(sid){const c=S.classes.find(x=>x.students.some(s=>s.id===sid));const k=c&&c.students.find(s=>s.id===sid);
   if(k&&k.checkRate!=null&&k.checkRate!=="")return +k.checkRate;if(c&&c.checkRate!=null&&c.checkRate!=="")return +c.checkRate;return +S.checkRate||0}
 const fmtTime=t=>{if(!t)return"";const d=new Date(t),z=n=>String(n).padStart(2,"0");return `${z(d.getDate())}.${z(d.getMonth()+1)}. ${z(d.getHours())}:${z(d.getMinutes())}`};
@@ -444,7 +446,7 @@ function stagesOf(a){const n=Math.max(1,...a.islands.map(stageOf),(a.stageNames|
     out.push({k,name:(a.stageNames||[])[k-1]||"",R:g("route"),L1,L2,SP:g("sprint"),fork:L1.length+L2.length>0})}return out}
 const stageIslands=a=>stagesOf(a).flatMap(st=>[...st.R,...st.L1,...st.L2,...st.SP]);
 const sumStars=l=>l.reduce((t,i)=>t+(+i.stars||0),0);
-const passed=(sid,aid,iid)=>{const p=peek(sid,aid,iid);return !!(p&&(p.done||p.pending))};
+const passed=(sid,aid,iid)=>{const p=peek(sid,aid,iid);return !!(p&&p.done)};
 function stageComplete(a,sid,st,fn){fn=fn||(i=>passed(sid,a.id,i.id));if(!st.R.every(fn))return false;if(!st.fork)return true;
   const c=choiceOf(sid,a.id,st.k);if(!c)return false;return (c===1?st.L1:st.L2).every(fn)}
 const kidClass=sid=>S.classes.find(c=>c.students.some(s=>s.id===sid));
@@ -721,7 +723,7 @@ function checkCode(){
   const a=adv(),k=stu(),isl=a.islands.find(i=>i.id===V.iid),p=IP(k.id,a.id,isl.id),code=String(isl.code);
   p.log=(p.log||[]).concat({at:Date.now(),v:V.val,ok:V.val===code}).slice(-40);
   if(V.val===code){p.at=Date.now();V.visit=(V.visit||0)+1;
-    if(isl.type==="mixed"&&Math.random()<rateFor(k.id)){p.pending=true;p.log.push({at:p.at,cmp:1,check:1});save();return go({...V,s:"pend"})}
+    if(checkEnabled(a,isl)&&Math.random()<rateFor(k.id)){p.pending=true;p.log.push({at:p.at,cmp:isl.type==="mixed"?1:0,check:1});save();return go({...V,s:"pend"})}
     if(isl.type==="mixed")p.log.push({at:p.at,cmp:1});
     p.done=true;save();sfx("win");return go({...V,s:"win"})}
   p.tries++;if(S.maxTries>0&&p.tries>=S.maxTries)p.locked=true;
@@ -748,12 +750,12 @@ function stationAsk(a,k,isl){
 function cmpDone(){
   const a=adv(),k=stu(),isl=a.islands.find(i=>i.id===V.iid),p=IP(k.id,a.id,isl.id);
   p.at=Date.now();V.visit=(V.visit||0)+1;
-  if(Math.random()<rateFor(k.id)){p.pending=true;p.log=(p.log||[]).concat({at:p.at,cmp:1,check:1}).slice(-40);save();return go({...V,s:"pend"})}
+  if(checkEnabled(a,isl)&&Math.random()<rateFor(k.id)){p.pending=true;p.log=(p.log||[]).concat({at:p.at,cmp:1,check:1}).slice(-40);save();return go({...V,s:"pend"})}
   p.log=(p.log||[]).concat({at:p.at,cmp:1}).slice(-40);
   p.done=true;save();sfx("win");go({...V,s:"win"});
 }
 function teacherIsl(a,k,isl){
-  app.innerHTML=head(a,k,isl)+`<div class="card"><p>Diese Insel hakt ${esc(S.teacher)} ab.</p><p>Bist du fertig? Dann tippe auf „Ich bin fertig“ und zeig deine Arbeit ${esc(S.teacher)}. Die Sterne gibt es, wenn ${esc(S.teacher)} abhakt.</p>
+  app.innerHTML=head(a,k,isl)+`<div class="card"><p>Diese Insel hakt ${esc(S.teacher)} ab.</p><p>Bist du fertig? Dann tippe auf „Ich bin fertig“ und zeig deine Arbeit ${esc(S.teacher)}. Wenn ${esc(S.teacher)} abhakt, gibt es die Sterne und es geht weiter.</p>
     <div class="btnrow"><button class="check" data-act="tFertig">Ich bin fertig</button><button class="check alt" data-act="toMap">Noch nicht</button></div></div>`;idle(30000)}
 function pendScreen(a,k,isl){
   const t=isl.type==="teacher";
@@ -768,10 +770,10 @@ function winScreen(a,k,isl,pend){
       ${chest?`<div class="stage">${CHEST}<div class="burst">${coins}${multi?coins.replace(/--d:(\d+)ms/g,(m,x)=>`--d:${+x+600}ms`):""}</div></div>`:""}
       ${multi?`<div class="ribbon" role="status"><span>${fahrt}</span></div><p class="note" style="font-size:18px;margin:6px 0 0">${nv===2?"Zwei":nv===3?"Drei":nv} Inseln in einer Fahrt!</p>`:""}
       <p class="h"${pend&&!tch?' style="font-size:46px;overflow-wrap:anywhere"':""}>${pend?(tch?"Super!":"Kapitänskontrolle!"):"Sehr gut!"}</p>
-      <p class="n">${pend?`Du kannst weitersegeln!<br><span style="font-size:21px">Zeig ${tch?"deine Arbeit":"dein Heft"} ${esc(S.teacher)}. Dann werden deine Sterne golden.</span>`:reached?"Du hast das Ziel erreicht!":"Du kannst weitersegeln!"}</p>
+      <p class="n">${pend?`Zeig ${tch?"deine Arbeit":"dein Heft"} ${esc(S.teacher)}.<br><span style="font-size:21px">Danach werden deine Sterne golden und du kannst weitersegeln. Rechnen kannst du schon weiter.</span>`:reached?"Du hast das Ziel erreicht!":"Du kannst weitersegeln!"}</p>
       <div class="stars">${Array.from({length:+isl.stars||0},(_,i)=>starSvg(!!pend,(chest?700:200)+i*250)).join("")}</div>
       <p class="n" style="margin-top:16px;font-size:20px">${esc(k.name)} · ${esc(isl.name)} · Sterne: ${kidStars(a,k.id)} von ${maxStars(a)}${pend?` <span style="white-space:nowrap">(+${+isl.stars||0} nach der Kontrolle)</span>`:""}</p>
-      ${(()=>{const n=nextStep(a,k.id);
+      ${(()=>{if(pend)return `<div class="btnrow"><button class="check" data-act="toNames">Okay</button></div>`;const n=nextStep(a,k.id);
         if(n&&n.kind==="isl")return `<div class="btnrow"><button class="check" data-act="nextCode">${hasCode(n.isl)?"Noch einen Code?":"Zur nächsten Insel"}</button><button class="check alt" data-act="toNames">Fertig</button></div><p class="note" style="margin-top:10px;font-size:16px">Nächste Insel: ${esc(n.isl.name)} · <button class="back" style="padding:4px 10px;font-size:15px" data-act="toMap">Karte ansehen</button></p>`;
         if(n&&n.kind==="fork")return `<div class="btnrow"><button class="check" data-act="nextCode">Weg wählen</button><button class="check alt" data-act="toNames">Fertig</button></div>`;
         return `<div class="btnrow"><button class="check alt" data-act="toMap">Weitersegeln</button><button class="check" data-act="toNames">Fertig</button></div>`})()}</div>
@@ -800,6 +802,7 @@ function tapIsland(id){
   if(st==="locked")return toast(`Gesperrt. Frag ${S.teacher}.`);
   if(st==="closed")return toast("Du fährst den anderen Weg.");
   if(st==="fog"){
+    if(a.islands.some(x=>peek(k.id,a.id,x.id)?.pending))return toast(`Erst nach der Kapitänskontrolle bei ${S.teacher} geht es weiter.`);
     if(!stageOpen(a,k.id,sk)){const prev=stagesOf(a)[sk-2];return toast(prev&&stageComplete(a,k.id,prev)?`Etappe ${sk} ist noch nicht freigegeben. ${S.teacher} gibt sie frei.`:`Noch im Nebel. Schaffe erst Etappe ${sk-1}.`)}
     if(isl.sec==="sprint"&&stagesOf(a)[sk-1].fork)return toast("Noch im Nebel. Schaffe erst eine Wahlpflicht-Insel.");
     if(isl.sec==="sprint"){const an=a.islands.find(i=>i.id===isl.after);return toast(`Noch im Nebel. Schaffe erst ${an?an.name:"die Insel davor"}.`)}
@@ -816,6 +819,7 @@ function nextStep(a,sid){const tk=kidTarget(a,sid);
   if(isl){const st=status(a,sid,isl);if(st==="open"||st==="locked")return{kind:"isl",isl}}
   return null}
 function goNext(a,sid){const n=a.direct!==false?nextStep(a,sid):null;const base={cls:V.cls,aid:V.aid,sid,visit:V.visit||0};
+  if(!n&&a.islands.some(x=>peek(sid,a.id,x.id)?.pending)){go({...base,s:"map"});return toast(`Zeig erst dein Heft ${S.teacher}. Danach geht es weiter.`)}
   if(n&&n.kind==="isl")return go({...base,s:"isl",iid:n.isl.id,val:"",res:null,tips:null,step:0,marks:null});
   if(n&&n.kind==="fork")return go({...base,s:"fork",pick:0,stage:n.stage});
   go({...base,s:"map"})}
@@ -1024,10 +1028,12 @@ function tEdit(){
       traps=photoBlock(i)}
     if(i.type==="teacher")ext=`<span class="note">Kinder können hier nichts eingeben. Du hakst in der Übersicht ab, z. B. für Plakat, Zeichnung oder Vortrag.</span>`;
     const after=i.sec==="sprint"&&s&&s.fork?`<p class="note" style="grid-column:1/-1;margin:0">Zweigt nach der Zusammenführung ab und öffnet sich, sobald eine Wahlpflicht-Insel geschafft ist.</p>`:i.sec==="sprint"?`<label class="note" style="display:flex;gap:6px;align-items:center;grid-column:1/-1">erreichbar ab <select data-if="after" data-id="${i.id}"><option value="">Start</option>${s.R.map(r=>`<option value="${r.id}" ${i.after===r.id?"selected":""}>nach ${esc(r.name)}</option>`).join("")}</select></label>`:"";
+    const chk=i.type==="teacher"?"":`<label class="note" style="grid-column:1/-1;display:flex;gap:6px;align-items:center;flex-wrap:wrap">Kapitänskontrolle: <select data-if="check" data-id="${i.id}" aria-label="Kapitänskontrolle für diese Insel">
+      <option value="" ${!i.check?"selected":""}>wie im Abenteuer (${i.type==="code"?(a.codeCheck?"an":"aus"):"an"})</option><option value="on" ${i.check==="on"?"selected":""}>an</option><option value="off" ${i.check==="off"?"selected":""}>aus</option></select></label>`;
     return `<div class="isl-row"><input type="text" data-if="name" data-id="${i.id}" value="${esc(i.name)}" aria-label="Name der Insel">
       <select data-if="type" data-id="${i.id}" aria-label="Art"><option value="code" ${i.type==="code"?"selected":""}>Code-Insel</option><option value="compare" ${i.type==="compare"?"selected":""}>Vergleichs-Insel</option><option value="mixed" ${i.type==="mixed"?"selected":""}>Gemischt (Code + Vergleich)</option><option value="teacher" ${i.type==="teacher"?"selected":""}>Lehrkraft-Insel</option></select>
       <select data-if="stars" data-id="${i.id}" aria-label="Sterne">${[1,2,3,4,5].map(n=>`<option value="${n}" ${+i.stars===n?"selected":""}>${n} ★</option>`).join("")}</select>
-      ${ext}<div class="ctl"><button class="btn sm" data-act="mvIsl" data-id="${i.id}" data-d="-1" ${k===0?"disabled":""} aria-label="Nach oben">↑</button><button class="btn sm" data-act="mvIsl" data-id="${i.id}" data-d="1" ${k===list.length-1?"disabled":""} aria-label="Nach unten">↓</button><button class="btn sm warn" data-act="delIsl" data-id="${i.id}" aria-label="Insel löschen">✕</button></div>${after}${traps}</div>`};
+      ${ext}<div class="ctl"><button class="btn sm" data-act="mvIsl" data-id="${i.id}" data-d="-1" ${k===0?"disabled":""} aria-label="Nach oben">↑</button><button class="btn sm" data-act="mvIsl" data-id="${i.id}" data-d="1" ${k===list.length-1?"disabled":""} aria-label="Nach unten">↓</button><button class="btn sm warn" data-act="delIsl" data-id="${i.id}" aria-label="Insel löschen">✕</button></div>${after}${chk}${traps}</div>`};
   const sec=(st,key,title,note,cls)=>{const L=a.islands.filter(i=>i.sec===key&&stageOf(i)===st.k);return `<div class="sec ${cls||""}"><h4>${title}</h4>${note?`<p class="note" style="margin:-4px 0 6px">${note}</p>`:""}
     ${L.map(i=>row(i,L)).join("")}<div class="row" style="margin-top:8px"><button class="btn sm" data-act="addIsl" data-sec="${key}" data-st="${st.k}">+ Insel</button></div></div>`};
   const stageBox=st=>{const empty=!a.islands.some(i=>stageOf(i)===st.k);
@@ -1047,6 +1053,7 @@ function tEdit(){
     <div class="row" style="margin-top:10px;gap:18px">
       <label class="cb"><input type="checkbox" data-af="active" ${a.active?"checked":""}> aktiv (Kinder sehen es)</label>
       <label class="cb"><input type="checkbox" data-af="direct" ${a.direct!==false?"checked":""}> Nach dem Namen direkt zum Zahlenschloss der nächsten Insel</label>
+      <label class="cb"><input type="checkbox" data-af="codeCheck" ${a.codeCheck?"checked":""}> Kapitänskontrolle auch bei Code-Inseln</label>
       <label class="cb"><input type="checkbox" data-af="chest" ${a.chest!==false?"checked":""}> Schatztruhe beim Code (öffnet sich, Münzen fliegen)</label>
       ${ST.length>1?`<label class="cb"><input type="checkbox" data-af="gate" ${a.gate?"checked":""}> Neue Etappen erst nach meiner Freigabe öffnen</label>`:""}
 </div>
@@ -1139,7 +1146,7 @@ app.addEventListener("change",async e=>{
   if(t.dataset.kcr&&V.s==="teacher"){const [cid,sid]=t.dataset.kcr.split("|");const k=S.classes.find(x=>x.id===cid)?.students.find(s=>s.id===sid);if(k){k.checkRate=t.value===""?null:+t.value;save();toast("Gespeichert.")}return}
   const a=S.adventures.find(x=>x.id===T.edit);if(!a||V.s!=="teacher")return;
   if(t.dataset.af){const f=t.dataset.af;a[f]=t.type==="checkbox"?t.checked:f==="goalPerKid"?(parseInt(t.value,10)||0):t.value.trim();save();
-    if(f==="b1"||f==="b2"||f==="goal")return render();refreshPreview(a);return}
+    if(f==="b1"||f==="b2"||f==="goal"||f==="codeCheck")return render();refreshPreview(a);return}
   if(t.dataset.sn){const k=+t.dataset.sn;a.stageNames=a.stageNames||[];while(a.stageNames.length<k)a.stageNames.push("");a.stageNames[k-1]=t.value.trim();save();refreshPreview(a);return}
   if(t.dataset.acl){const id=t.dataset.acl;a.classIds=t.checked?[...new Set([...a.classIds,id])]:a.classIds.filter(x=>x!==id);save();refreshPreview(a);return}
   if(t.dataset.if){const i=a.islands.find(x=>x.id===t.dataset.id);if(!i)return;const f=t.dataset.if;
@@ -1301,7 +1308,7 @@ if("serviceWorker" in navigator){
   navigator.serviceWorker.addEventListener("controllerchange",()=>{if(hadController)window.__updateReady=true});
   window.addEventListener("load",()=>{navigator.serviceWorker.register("sw.js",{updateViaCache:"none"}).then(reg=>{
     document.addEventListener("visibilitychange",()=>{if(!document.hidden)reg.update().catch(()=>{})})}).catch(()=>{})})}
-window.APP_VERSION="20261118-1628";
+window.APP_VERSION="20261118-1756";
 </script>
 </body>
 </html>
