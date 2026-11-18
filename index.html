@@ -103,6 +103,13 @@ h2{font-family:var(--display);font-weight:400;font-size:44px;margin:4px 0 14px;t
 .slot.bad{border-color:#FF8E7F;background:linear-gradient(180deg,#2A0A06,#B1372B 50%,#2A0A06);animation:blink .9s ease 2}
 @keyframes blink{50%{filter:brightness(1.5)}}
 .slot small{position:absolute;bottom:-25px;font-size:16px;color:#3B260C}
+.slots.grp{gap:18px;align-items:flex-end;padding-top:10px}
+.cgroup{display:flex;flex-direction:column;align-items:center;gap:6px}
+.cglab{font-weight:900;font-size:17px;color:#3B260C;background:rgba(255,245,210,.6);border-radius:8px;padding:2px 10px}
+.cgrow{display:flex;gap:6px}
+.slots.sm .slot{width:56px;height:74px;font-size:40px}
+.slots.xs .slot{width:46px;height:62px;font-size:32px;border-width:2px}
+.slots.xs .slot small,.slots.sm .slot small{font-size:14px;bottom:-22px}
 .pad{display:grid;grid-template-columns:repeat(3,96px);gap:10px}
 .pad button{height:74px;border-radius:16px;background:var(--paper);border:2px solid #CDB27A;box-shadow:0 3px 0 #B9995C;font-size:34px;font-weight:900}
 .pad button:active{transform:translateY(2px);box-shadow:0 1px 0 #B9995C}
@@ -208,6 +215,8 @@ td button:hover{background:#F1E4C0}
 .imp .bad{color:var(--bad)}
 .err-row{display:flex;gap:10px;align-items:baseline;padding:4px 0;border-bottom:1px dashed #E3D2A9;flex-wrap:wrap}
 .err-row b{min-width:34px;font-variant-numeric:tabular-nums}
+.sheet-bg{position:fixed;inset:0;background:rgba(30,18,8,.55);z-index:8;display:flex;align-items:center;justify-content:center;padding:20px}
+.sheet{background:var(--paper);border:3px solid var(--wood);border-radius:16px;padding:18px 20px;max-width:620px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.35)}
 .lightbox{position:fixed;inset:0;background:rgba(30,18,8,.92);z-index:10;display:none;flex-direction:column;align-items:center;justify-content:center;padding:calc(56px + env(safe-area-inset-top,0px)) 12px 12px}
 .lightbox.on{display:flex}
 .lightbox .lbwrap{overflow:auto;max-width:100%;max-height:100%}
@@ -218,6 +227,9 @@ td button:hover{background:#F1E4C0}
 .win2 .wl{position:relative}
 .win2 .chest{width:170px}
 .win2 .h{font-size:68px}
+.ribbon{display:inline-block;position:relative;margin:4px auto 0;animation:ribbonIn .7s cubic-bezier(.3,1.6,.5,1) both .9s}
+.ribbon span{display:inline-block;background:linear-gradient(180deg,#F3D27A,#C2923A);color:#40260F;font-family:var(--display);font-size:40px;padding:6px 34px;border:3px solid #7A5A1E;box-shadow:0 4px 0 #7A5A1E;clip-path:polygon(0 0,100% 0,94% 50%,100% 100%,0 100%,6% 50%)}
+@keyframes ribbonIn{from{transform:scale(.3) rotate(-8deg);opacity:0}to{transform:scale(1) rotate(-2deg);opacity:1}}
 .map.static{pointer-events:none}
 @media (max-width:900px){.win2{grid-template-columns:1fr}}
 @media (max-width:820px){.isl-row{grid-template-columns:1fr 1fr}.isl-row .ctl{grid-column:span 2}}
@@ -239,7 +251,7 @@ td button:hover{background:#F1E4C0}
 const KEY="kapitaens-karte-v1";
 let canStore=true;
 const uid=()=>Math.random().toString(36).slice(2,10);
-function blank(){return {v:1,pin:"",maxTries:3,teacher:"deine Lehrkraft",checkRate:0.25,sound:false,lastBackup:0,classes:[],adventures:[],progress:{}}}
+function blank(){return {v:1,pin:"",maxTries:3,teacher:"deine Lehrkraft",checkRate:1/7,sound:false,lastBackup:0,classes:[],adventures:[],progress:{}}}
 function mkIsl(name,type,stars,sec,extra){return Object.assign({id:uid(),name,type,stars,sec,code:"",parts:3,hint:"",after:"",traps:[],photos:[]},extra||{})}
 function seed(){
   const s=blank();
@@ -314,10 +326,24 @@ lbi.onclick=()=>lbi.classList.toggle("full");
 /* ================= Fallen und Import ================= */
 function parseTrap(line){const m=String(line).trim().match(/^([a-p]|\d{1,2})\s*[)\-:.]?\s*(\d)\s*[=:]\s*(.+)$/i);if(!m)return null;
   const pos=/\d/.test(m[1])?parseInt(m[1],10)-1:LET.indexOf(m[1].toLowerCase());return pos<0?null:{pos,d:m[2],text:m[3].trim()}}
-const trapLine=t=>`${LET[t.pos]} ${t.d} = ${t.text}`;
-function trapWarnings(i){const w=[];if(i.type!=="code")return w;const c=String(i.code||"");
+const hasCode=i=>i.type==="code"||i.type==="mixed";
+function groupsOf(i){const n=String(i.code||"").length;if(Array.isArray(i.groups)&&i.groups.length&&i.groups.reduce((t,g)=>t+(+g.n||0),0)===n)return i.groups;return null}
+function posLabel(i,pos){const g=groupsOf(i);if(!g)return String(i.code||"").length>1?LET[pos]:"";let o=0;for(const x of g){if(pos<o+x.n)return `${x.label} ${LET[pos-o]}`;o+=x.n}return LET[pos]||""}
+function codeText(i){const g=groupsOf(i),c=String(i.code||"");if(!g)return c;let o=0;return g.map(x=>{const s=c.slice(o,o+x.n);o+=x.n;return `${x.label} = ${s}`}).join(" | ")}
+function parseCodeText(v){v=String(v||"").trim();if(!v.includes("="))return{code:v.replace(/\D/g,""),groups:null};
+  const groups=[];let code="";
+  for(const part of v.split(/[|;]/).map(s=>s.trim()).filter(Boolean)){const m=part.match(/^(.*?)\s*=\s*([\d\s]+)$/);
+    if(!m)return{error:`„${part}“ verstehe ich nicht. Bitte so: Nr. 1 = 4718 | Nr. 2 = 302`};
+    const d=m[2].replace(/\D/g,"");groups.push({label:m[1].trim()||("Teil "+(groups.length+1)),n:d.length});code+=d}
+  return{code,groups:groups.length>1||groups[0]&&groups[0].label?groups:null}}
+function parseTrapFor(i,line){const g=groupsOf(i),s=String(line).trim();
+  if(g){let o=0,best=null;for(const x of g){if(s.toLowerCase().startsWith(x.label.toLowerCase())&&(!best||x.label.length>best.x.label.length))best={x,o};o+=x.n}
+    if(best){const t=parseTrap(s.slice(best.x.label.length));if(!t||t.pos>=best.x.n)return null;return{...t,pos:best.o+t.pos}}}
+  return parseTrap(s)}
+const trapLine=(t,i)=>`${(i&&posLabel(i,t.pos))||LET[t.pos]} ${t.d} = ${t.text}`;
+function trapWarnings(i){const w=[];if(!hasCode(i))return w;const c=String(i.code||"");
   if(!c)w.push("Code fehlt");
-  (i.traps||[]).forEach(t=>{if(t.pos>=c.length)w.push(`Falle ${LET[t.pos]}) passt nicht zur Code-Länge`);else if(c[t.pos]===t.d)w.push(`Falle ${LET[t.pos]}) hat dieselbe Ziffer wie die Lösung`)});return w}
+  (i.traps||[]).forEach(t=>{const l=posLabel(i,t.pos)||LET[t.pos];if(t.pos>=c.length)w.push(`Falle ${l} passt nicht zur Code-Länge`);else if(c[t.pos]===t.d)w.push(`Falle ${l} hat dieselbe Ziffer wie die Lösung`)});return w}
 function cleanImport(t){t=String(t||"").replace(/^\uFEFF/,"");
   for(let n=0;n<4&&/%[0-9A-Fa-f]{2}/.test(t);n++){const before=t;
     t=t.replace(/(%[0-9A-Fa-f]{2})+/g,m=>{try{return decodeURIComponent(m)}catch(e){return m.replace(/%([0-9A-Fa-f]{2})/g,(x,hx)=>{const c=parseInt(hx,16);return c<128?String.fromCharCode(c):x})}});
@@ -327,7 +353,7 @@ function cleanImport(t){t=String(t||"").replace(/^\uFEFF/,"");
 function parseImport(txt){txt=cleanImport(txt);
   const out={name:"",goalText:"",b1:"",b2:"",islands:[],errors:[],stageNames:[]};let cur=null,stg=0;
   const SEC={grundlagen:"route",route:"route",pflicht:"route","wahlpflicht 1":"wp1","weg 1":"wp1",wp1:"wp1","wahlpflicht 2":"wp2","weg 2":"wp2",wp2:"wp2",sprinter:"sprint",sprint:"sprint",abstecher:"sprint"};
-  const ART={code:"code","code-insel":"code",vergleich:"compare",vergleichen:"compare","vergleichs-insel":"compare",lehrkraft:"teacher","lehrkraft-insel":"teacher"};
+  const ART={code:"code","code-insel":"code",vergleich:"compare",vergleichen:"compare","vergleichs-insel":"compare",lehrkraft:"teacher","lehrkraft-insel":"teacher",gemischt:"mixed","gemischte insel":"mixed","code+vergleich":"mixed","code + vergleich":"mixed"};
   String(txt).replace(/```[a-z]*/gi,"").split(/\r?\n/).forEach((raw,n)=>{const line=raw.trim();if(!line||line.startsWith("#"))return;
     const m=line.match(/^([A-Za-zÄÖÜäöüß\-]+(?:\s\d)?)\s*:\s*(.*)$/);
     if(!m){out.errors.push(`Zeile ${n+1} verstehe ich nicht: „${cut(line,40)}“`);return}
@@ -339,14 +365,17 @@ function parseImport(txt){txt=cleanImport(txt);
     if(k==="insel"){cur=mkIsl(v||"Insel","code",1,"route",{_ex:stg});out.islands.push(cur);return}
     if(!cur){out.errors.push(`Zeile ${n+1}: „${m[1]}“ steht vor der ersten INSEL-Zeile.`);return}
     if(k==="sterne"){cur.stars=Math.max(1,Math.min(5,parseInt(v,10)||1))}
-    else if(k==="code"){cur.code=v.replace(/\D/g,"");cur.type="code"}
-    else if(k==="art"){const t=ART[v.toLowerCase()];if(t)cur.type=t;else out.errors.push(`Zeile ${n+1}: Art „${v}“ kenne ich nicht (Code, Vergleich, Lehrkraft).`)}
+    else if(k==="code"){const r=parseCodeText(v);if(r.error){out.errors.push(`Zeile ${n+1}: ${r.error}`)}else{cur.code=r.code;cur.groups=r.groups;if(cur.type!=="mixed")cur.type=cur.cmpText?"mixed":"code"}}
+    else if(k==="vergleich"){cur.cmpText=v;if(cur.code&&cur.type!=="teacher")cur.type="mixed"}
+    else if(k==="art"){const t=ART[v.toLowerCase()];if(t)cur.type=t;else out.errors.push(`Zeile ${n+1}: Art „${v}“ kenne ich nicht (Code, Vergleich, Gemischt, Lehrkraft).`)}
     else if(k==="abschnitt"||k==="bereich"){const t=SEC[v.toLowerCase()];if(t)cur.sec=t;else out.errors.push(`Zeile ${n+1}: Abschnitt „${v}“ kenne ich nicht (Grundlagen, Wahlpflicht 1, Wahlpflicht 2, Sprinter).`)}
     else if(k==="teile"){cur.parts=Math.max(1,Math.min(16,parseInt(v,10)||1))}
     else if(k==="hinweis"){cur.hint=v}
     else if(k==="ab"){cur._after=v}
-    else if(k==="falle"){const t=parseTrap(v);if(t)cur.traps.push(t);else out.errors.push(`Zeile ${n+1}: Falle bitte so schreiben: „c 7 = Übertrag vergessen“.`)}
+    else if(k==="falle"){(cur._traps||=[]).push({v,n})}
     else out.errors.push(`Zeile ${n+1}: „${m[1]}“ kenne ich nicht.`)});
+  out.islands.forEach(i=>{(i._traps||[]).forEach(({v,n})=>{const t=parseTrapFor(i,v);if(t)i.traps.push(t);else out.errors.push(`Zeile ${n+1}: Falle bitte so schreiben: „c 7 = Übertrag vergessen“${groupsOf(i)?" oder „Nr. 2 b 7 = Übertrag vergessen“":""}.`)});delete i._traps;
+    if(i.type==="mixed"&&!i.cmpText)i.cmpText="den Rest"});
   // Kapitel: neue ETAPPE-Zeile oder Grundlagen-Insel nach Wahlpflicht/Sprinter beginnt ein neues Kapitel
   let kk=0,non=false,lastEx=null;const names=[];
   out.islands.forEach(i=>{if(i._ex!==lastEx){kk++;non=false;lastEx=i._ex;if(i._ex)names[kk-1]=out.stageNames[i._ex-1]||""}
@@ -390,6 +419,17 @@ STERNE: 3
 CODE: 495
 
 (Hat das Abenteuer mehrere Etappen (Abschnitte nacheinander, jeweils mit eigenen Grundlagen, Wahlpflicht und Sprintern), steht vor den Inseln jeder Etappe eine Zeile ETAPPE: Name der Etappe. ABSCHNITT: Grundlagen, Wahlpflicht 1, Wahlpflicht 2 oder Sprinter. ART: Code, Vergleich oder Lehrkraft. Aufgaben ohne eindeutige Zahl, z. B. Zeichnungen, bekommen ART: Vergleich und keinen CODE. Für jede Vergleichs-Insel bitte eine eigene, gut lesbare Lösungsseite im Lösungsblatt, die ich fotografieren kann. FALLE: Teilaufgabe, Ziffer der Falle, =, kurzer Tipp für das Kind.)`;
+
+/* ================= Kapitänskontrolle ================= */
+const RATES=[[0,"nie"],[0.1,"etwa jedes 10. Mal"],[1/7,"etwa jedes 7. Mal"],[0.2,"etwa jedes 5. Mal"],[0.25,"etwa jedes 4. Mal"],[1/3,"etwa jedes 3. Mal"],[0.5,"etwa jedes 2. Mal"],[1,"immer"]];
+const sameRate=(x,y)=>x!=null&&x!==""&&Math.abs(+x-+y)<1e-6;
+const rateOptions=(cur,extra)=>(extra?`<option value="" ${cur==null||cur===""?"selected":""}>${extra}</option>`:"")+RATES.map(([v,l])=>`<option value="${v}" ${sameRate(cur,v)?"selected":""}>${l}</option>`).join("");
+function rateFor(sid){const c=S.classes.find(x=>x.students.some(s=>s.id===sid));const k=c&&c.students.find(s=>s.id===sid);
+  if(k&&k.checkRate!=null&&k.checkRate!=="")return +k.checkRate;if(c&&c.checkRate!=null&&c.checkRate!=="")return +c.checkRate;return +S.checkRate||0}
+const fmtTime=t=>{if(!t)return"";const d=new Date(t),z=n=>String(n).padStart(2,"0");return `${z(d.getDate())}.${z(d.getMonth()+1)}. ${z(d.getHours())}:${z(d.getMinutes())}`};
+function wrongTimes(p){return [...new Set(((p&&p.errs)||[]).map(e=>e.at).filter(Boolean))].sort((x,y)=>x-y).slice(-((p&&p.tries)||0)||Infinity).filter(()=>p&&p.tries>0)}
+const wrongNote=p=>{const w=wrongTimes(p);return w.length?" ("+w.map(t=>fmtTimeLong(t)).join(", ")+")":""};
+const fmtTimeLong=t=>{if(!t)return"";const d=new Date(t),z=n=>String(n).padStart(2,"0");return `${z(d.getDate())}.${z(d.getMonth()+1)}.${d.getFullYear()} ${z(d.getHours())}:${z(d.getMinutes())}`};
 
 /* ================= Fortschritt ================= */
 const AP=(sid,aid)=>((S.progress[sid]||={})[aid]||={choice:null,isl:{}});
@@ -649,25 +689,28 @@ function render(){
   if(V.s==="fork")return forkScreen(a,k);
   const isl=a.islands.find(i=>i.id===V.iid);if(!isl)return go({...V,s:"map"});
   if(V.s==="isl"){
-    if(isl.type==="code")return codeScreen(a,k,isl);
+    if(isl.type==="mixed"&&V.step!==1)return stationAsk(a,k,isl);
+    if(hasCode(isl))return codeScreen(a,k,isl);
     if(isl.type==="compare")return compareScreen(a,k,isl);
     return teacherIsl(a,k,isl)}
   if(V.s==="win")return winScreen(a,k,isl);
-  if(V.s==="pend")return pendScreen(a,k,isl);
+  if(V.s==="pend")return winScreen(a,k,isl,true);
 }
 
-function head(a,k,isl){return `<div class="bar"><button class="back" data-act="toMap">← Zur Karte</button><span class="sp"></span>${starsHtml(+isl.stars||0)}</div><h2>${esc(isl.name)}</h2>`}
+function head(a,k,isl){return `<div class="bar"><button class="back" data-act="toNames">← Das bin ich nicht</button><button class="back" data-act="toMap">Karte · andere Insel</button><span class="sp"></span>${starsHtml(+isl.stars||0)}</div><p class="sub" style="margin:4px 0 0;font-size:21px">Ahoi, ${esc(k.name)}!</p><h2>${esc(isl.name)}</h2>`}
 
 function codeScreen(a,k,isl){
   const p=IP(k.id,a.id,isl.id),code=String(isl.code||""),n=code.length;
   if(!n){app.innerHTML=head(a,k,isl)+`<div class="card"><p>Für diese Insel fehlt noch der Code. Sag ${esc(S.teacher)} Bescheid.</p></div>`;return}
-  const lab=n>1?LET:"";
-  const res=V.res;
+  const res=V.res,g=groupsOf(isl),sz=n>12?" xs":n>8?" sm":"";
+  const slot=i=>{const ch=V.val[i]||"";const c2=res?(res[i]?"ok":"bad"):(i===V.val.length?"cur":"");return `<div class="slot ${c2}">${esc(ch)}<small>${g?"":n>1?LET[i]:""}</small></div>`};
+  let off=0;const slotsHtml=g?`<div class="slots grp${sz}">${g.map(x=>{const s=off;off+=x.n;return `<div class="cgroup"><div class="cglab">${esc(x.label)}</div><div class="cgrow">${Array.from({length:x.n},(_,j)=>slot(s+j).replace("<small></small>",`<small>${LET[j]}</small>`)).join("")}</div></div>`}).join("")}</div>`
+    :`<div class="slots${sz}">${Array.from({length:n},(_,i)=>slot(i)).join("")}</div>`;
   app.innerHTML=head(a,k,isl)+`<div class="lockbox">
     ${a.chest!==false?`<div class="stage">${CHEST}</div>`:""}
-    <div class="slots">${Array.from({length:n},(_,i)=>{const ch=V.val[i]||"";const c2=res?(res[i]?"ok":"bad"):(i===V.val.length?"cur":"");return `<div class="slot ${c2}">${esc(ch)}<small>${lab[i]||""}</small></div>`}).join("")}</div>
+    ${slotsHtml}
     <div class="msg ${res?"bad":""}">${res?(p.locked?`Leider gesperrt. Geh zu ${esc(S.teacher)}.`:"Die roten Felder stimmen nicht. Rechne diese Aufgaben noch einmal."):""}</div>
-    ${res&&V.tips&&V.tips.length?`<ul class="tips">${V.tips.map(t=>`<li>${n>1?`<b>${LET[t.pos]})</b> `:""}Tipp: ${esc(t.text)}</li>`).join("")}</ul>`:""}
+    ${res&&V.tips&&V.tips.length?`<ul class="tips">${V.tips.map(t=>`<li>${n>1?`<b>${esc(posLabel(isl,t.pos))})</b> `:""}Tipp: ${esc(t.text)}</li>`).join("")}</ul>`:""}
     ${res||p.locked?"":`<div class="pad">${[1,2,3,4,5,6,7,8,9].map(d=>`<button data-act="digit" data-d="${d}" type="button">${d}</button>`).join("")}<button class="wide" data-act="del" type="button" aria-label="Löschen">⌫</button><button data-act="digit" data-d="0" type="button">0</button><button class="wide" data-act="clr" type="button">Neu</button></div>`}
     ${res||p.locked?(p.locked?"":`<button class="check" data-act="toNames">Okay, zurück an den Platz</button>`):`<button class="check" data-act="checkCode" ${V.val.length<n?"disabled":""}>Schloss öffnen</button>`}
     <div class="tries">${S.maxTries>0&&!p.locked?`Versuche übrig: ${Math.max(0,S.maxTries-p.tries)}`:""}</div></div>`;
@@ -676,7 +719,11 @@ function codeScreen(a,k,isl){
 }
 function checkCode(){
   const a=adv(),k=stu(),isl=a.islands.find(i=>i.id===V.iid),p=IP(k.id,a.id,isl.id),code=String(isl.code);
-  if(V.val===code){p.done=true;p.at=Date.now();save();sfx("win");return go({...V,s:"win"})}
+  p.log=(p.log||[]).concat({at:Date.now(),v:V.val,ok:V.val===code}).slice(-40);
+  if(V.val===code){p.at=Date.now();V.visit=(V.visit||0)+1;
+    if(isl.type==="mixed"&&Math.random()<rateFor(k.id)){p.pending=true;p.log.push({at:p.at,cmp:1,check:1});save();return go({...V,s:"pend"})}
+    if(isl.type==="mixed")p.log.push({at:p.at,cmp:1});
+    p.done=true;save();sfx("win");return go({...V,s:"win"})}
   p.tries++;if(S.maxTries>0&&p.tries>=S.maxTries)p.locked=true;
   V.res=[...code].map((d,i)=>V.val[i]===d);
   const wrong=V.res.map((ok,i)=>ok?null:{pos:i,d:V.val[i]}).filter(Boolean);
@@ -684,22 +731,25 @@ function checkCode(){
   V.tips=wrong.map(e=>(isl.traps||[]).find(t=>t.pos===e.pos&&t.d===e.d)).filter(Boolean);
   save();sfx("bad");V.shake=true;render();
 }
-function compareScreen(a,k,isl){
-  if(!V.step){
-    app.innerHTML=head(a,k,isl)+`<div class="card"><p>Hast du alle Aufgaben fertig gerechnet?</p><p class="note" style="font-size:17px">Erst danach schaust du in die Lösung.</p>
-      <div class="btnrow"><button class="check" data-act="cmpStart">Ja, Lösung vergleichen</button><button class="check alt" data-act="toMap">Noch nicht</button></div></div>`;
-    idle(90000);return}
-  const ph=(isl.photos||[]);
-  app.innerHTML=head(a,k,isl)+`<div class="card"><p><b>Vergleiche jetzt mit der Lösung.</b> ${esc(isl.hint||"")}</p>
-    ${ph.length?`<div class="phs wide">${ph.map(id=>`<button class="ph" data-act="zoom" data-id="${id}" aria-label="Lösung groß ansehen"><img data-ph="${id}" alt="Lösung"></button>`).join("")}</div><p class="note">Tippe auf das Bild, um es groß zu sehen.</p>`:""}
-    <p class="note" style="font-size:17px">Verbessere, was nicht stimmt. Fehler verbessern ist genauso gut.</p>
-    <div class="btnrow"><button class="check" data-act="cmpDone">Okay, fertig verglichen</button></div></div>`;
-  idle(180000);
+function compareScreen(a,k,isl){return stationAsk(a,k,isl)}
+function stationAsk(a,k,isl){
+  const mixed=isl.type==="mixed",what=mixed?(isl.cmpText||"den Rest"):"deine Aufgaben",ph=(isl.photos||[]);
+  if(V.step==="later"){app.innerHTML=head(a,k,isl)+`<div class="card"><p><b>Dann geh erst zur Lösungsstation.</b></p><p>Vergleiche ${esc(what)}, verbessere mit grünem Stift und komm danach wieder.</p>
+      <div class="btnrow"><button class="check" data-act="toNames">Okay</button></div></div>`;idle(10000);return}
+  if(isl.showPhoto&&ph.length){
+    app.innerHTML=head(a,k,isl)+`<div class="card"><p><b>Vergleiche ${esc(what)} mit der Lösung.</b> ${esc(isl.hint||"")}</p>
+      <div class="phs wide">${ph.map(id=>`<button class="ph" data-act="zoom" data-id="${id}" aria-label="Lösung groß ansehen"><img data-ph="${id}" alt="Lösung"></button>`).join("")}</div><p class="note">Tippe auf das Bild, um es groß zu sehen. Verbessere, was nicht stimmt.</p>
+      <div class="btnrow"><button class="check" data-act="cmpYes">Fertig verglichen${mixed?", weiter zum Code":""}</button><button class="check alt" data-act="toMap">Noch nicht</button></div></div>`;
+    idle(180000);return}
+  app.innerHTML=head(a,k,isl)+`<div class="card"><p style="font-size:24px"><b>Hast du ${esc(what)} an der Lösungsstation verglichen und verbessert?</b></p>${isl.hint?`<p class="note" style="font-size:17px">${esc(isl.hint)}</p>`:""}
+    <div class="btnrow"><button class="check" data-act="cmpYes">Ja, verglichen</button><button class="check alt" data-act="cmpLater">Noch nicht</button></div></div>`;
+  idle(60000);
 }
 function cmpDone(){
   const a=adv(),k=stu(),isl=a.islands.find(i=>i.id===V.iid),p=IP(k.id,a.id,isl.id);
-  p.at=Date.now();
-  if(Math.random()<(+S.checkRate||0)){p.pending=true;save();return go({...V,s:"pend"})}
+  p.at=Date.now();V.visit=(V.visit||0)+1;
+  if(Math.random()<rateFor(k.id)){p.pending=true;p.log=(p.log||[]).concat({at:p.at,cmp:1,check:1}).slice(-40);save();return go({...V,s:"pend"})}
+  p.log=(p.log||[]).concat({at:p.at,cmp:1}).slice(-40);
   p.done=true;save();sfx("win");go({...V,s:"win"});
 }
 function teacherIsl(a,k,isl){
@@ -709,17 +759,22 @@ function pendScreen(a,k,isl){
   const t=isl.type==="teacher";
   app.innerHTML=`<div class="win"><p class="h">${t?"Super!":"Kapitänskontrolle!"}</p><p class="n">${esc(k.name)}, zeig ${t?"deine Arbeit":"dein Heft"} ${esc(S.teacher)}.<br>Die Sterne für ${esc(isl.name)} gibt es danach. Du kannst schon weitersegeln!</p>
     <div class="btnrow"><button class="check" data-act="toNames">Okay</button></div></div>`;idle(12000)}
-function winScreen(a,k,isl){
+function winScreen(a,k,isl,pend){
   const coins=Array.from({length:18},(_,i)=>{const ang=(-160+i*(140/17))*Math.PI/180,dist=150+(i%3)*45;
     return `<span class="coin" style="--dx:${(Math.cos(ang)*dist).toFixed(0)}px;--dy:${(Math.sin(ang)*dist).toFixed(0)}px;--r:${(i*47)%360}deg;--d:${(450+i*35)}ms"></span>`}).join("");
-  const reached=goalReached(a,k.id),chest=a.chest!==false;
+  const reached=goalReached(a,k.id),chest=a.chest!==false&&!pend,tch=isl.type==="teacher";
+  const nv=V.visit||1,multi=nv>=2,FAHRT=["","","Doppelfahrt!","Dreifachfahrt!"],fahrt=FAHRT[nv]||"Volle Fahrt voraus!";
   app.innerHTML=`<div class="win win2"><div class="wl">
-      ${chest?`<div class="stage">${CHEST}<div class="burst">${coins}</div></div>`:""}
-      <p class="h">Sehr gut!</p>
-      <p class="n">${reached?"Du hast das Ziel erreicht!":"Du kannst weitersegeln!"}</p>
-      <div class="stars">${Array.from({length:+isl.stars||0},(_,i)=>starSvg(false,(chest?700:200)+i*250)).join("")}</div>
-      <p class="n" style="margin-top:16px;font-size:20px">${esc(k.name)} · ${esc(isl.name)} · Sterne: ${kidStars(a,k.id)} von ${maxStars(a)}</p>
-      <div class="btnrow"><button class="check alt" data-act="toMap">Weitersegeln</button><button class="check" data-act="toNames">Fertig</button></div></div>
+      ${chest?`<div class="stage">${CHEST}<div class="burst">${coins}${multi?coins.replace(/--d:(\d+)ms/g,(m,x)=>`--d:${+x+600}ms`):""}</div></div>`:""}
+      ${multi?`<div class="ribbon" role="status"><span>${fahrt}</span></div><p class="note" style="font-size:18px;margin:6px 0 0">${nv===2?"Zwei":nv===3?"Drei":nv} Inseln in einer Fahrt!</p>`:""}
+      <p class="h"${pend&&!tch?' style="font-size:46px;overflow-wrap:anywhere"':""}>${pend?(tch?"Super!":"Kapitänskontrolle!"):"Sehr gut!"}</p>
+      <p class="n">${pend?`Du kannst weitersegeln!<br><span style="font-size:21px">Zeig ${tch?"deine Arbeit":"dein Heft"} ${esc(S.teacher)}. Dann werden deine Sterne golden.</span>`:reached?"Du hast das Ziel erreicht!":"Du kannst weitersegeln!"}</p>
+      <div class="stars">${Array.from({length:+isl.stars||0},(_,i)=>starSvg(!!pend,(chest?700:200)+i*250)).join("")}</div>
+      <p class="n" style="margin-top:16px;font-size:20px">${esc(k.name)} · ${esc(isl.name)} · Sterne: ${kidStars(a,k.id)} von ${maxStars(a)}${pend?` <span style="white-space:nowrap">(+${+isl.stars||0} nach der Kontrolle)</span>`:""}</p>
+      ${(()=>{const n=nextStep(a,k.id);
+        if(n&&n.kind==="isl")return `<div class="btnrow"><button class="check" data-act="nextCode">${hasCode(n.isl)?"Noch einen Code?":"Zur nächsten Insel"}</button><button class="check alt" data-act="toNames">Fertig</button></div><p class="note" style="margin-top:10px;font-size:16px">Nächste Insel: ${esc(n.isl.name)} · <button class="back" style="padding:4px 10px;font-size:15px" data-act="toMap">Karte ansehen</button></p>`;
+        if(n&&n.kind==="fork")return `<div class="btnrow"><button class="check" data-act="nextCode">Weg wählen</button><button class="check alt" data-act="toNames">Fertig</button></div>`;
+        return `<div class="btnrow"><button class="check alt" data-act="toMap">Weitersegeln</button><button class="check" data-act="toNames">Fertig</button></div>`})()}</div>
     <div class="wr"><div class="map static">${mapSvg(a,{mode:"kid",sid:k.id,from:isl.id})}</div></div></div>`;
   requestAnimationFrame(()=>setTimeout(()=>document.getElementById("chest")?.classList.add("open"),120));
   setTimeout(()=>{const s=document.getElementById("kship");if(!s)return;
@@ -751,34 +806,48 @@ function tapIsland(id){
     if((isl.sec==="wp1"||isl.sec==="wp2")&&!forkOpen(a,k.id,sk))return toast("Noch im Nebel. Schaffe erst alle Grundlagen-Inseln.");
     if((isl.sec==="wp1"||isl.sec==="wp2")&&!choiceOf(k.id,a.id,sk))return toast("Wähle zuerst an der Weggabelung deinen Weg.");
     return toast("Noch im Nebel. Schaffe erst die Insel davor.")}
-  go({s:"isl",cls:V.cls,aid:V.aid,sid:V.sid,iid:id,val:"",res:null,tips:null,step:0,marks:null});
+  go({s:"isl",cls:V.cls,aid:V.aid,sid:V.sid,iid:id,val:"",res:null,tips:null,step:0,marks:null,visit:V.visit||0});
 }
+
+/* ================= Direkt zum Zahlenschloss ================= */
+function nextStep(a,sid){const tk=kidTarget(a,sid);
+  if(tk.startsWith("fork_"))return{kind:"fork",stage:+tk.slice(5)};
+  const isl=a.islands.find(i=>i.id===tk);
+  if(isl){const st=status(a,sid,isl);if(st==="open"||st==="locked")return{kind:"isl",isl}}
+  return null}
+function goNext(a,sid){const n=a.direct!==false?nextStep(a,sid):null;const base={cls:V.cls,aid:V.aid,sid,visit:V.visit||0};
+  if(n&&n.kind==="isl")return go({...base,s:"isl",iid:n.isl.id,val:"",res:null,tips:null,step:0,marks:null});
+  if(n&&n.kind==="fork")return go({...base,s:"fork",pick:0,stage:n.stage});
+  go({...base,s:"map"})}
 
 /* ================= Klicks ================= */
 const ACT={
   pickClass:d=>go({s:"adv",cls:d.id}), toClass:()=>go({s:"class"}), pickAdv:d=>go({s:"name",cls:V.cls,aid:d.id}),
-  toAdv:()=>go({s:"adv",cls:V.cls,_:1,force:1}), pickKid:d=>go({s:"map",cls:V.cls,aid:V.aid,sid:d.id}),
-  toNames, beamer:()=>go({s:"beamer",cls:V.cls,aid:V.aid}), toMap:()=>go({s:"map",cls:V.cls,aid:V.aid,sid:V.sid}),
+  toAdv:()=>go({s:"adv",cls:V.cls,_:1,force:1}), pickKid:d=>{V={...V,sid:d.id,visit:0};goNext(adv(),d.id)},
+  nextCode:()=>goNext(adv(),V.sid),
+  toNames, beamer:()=>go({s:"beamer",cls:V.cls,aid:V.aid}), toMap:()=>go({s:"map",cls:V.cls,aid:V.aid,sid:V.sid,visit:V.visit||0}),
   isl:d=>tapIsland(d.id),
   fork:d=>{const a=adv(),k=stu(),sk=+d.st||1;const ch=choiceOf(k.id,a.id,sk);
     if(ch)return toast(`Du fährst den Weg „${ch===1?a.b1:a.b2}“.`);
     if(!forkOpen(a,k.id,sk))return toast(stageOpen(a,k.id,sk)?"Schaffe erst alle Grundlagen-Inseln.":`Schaffe erst Etappe ${sk-1}.`);
     go({...V,s:"fork",pick:0,stage:sk})},
   pickWay:d=>{V.pick=+d.n;render()},
-  takeWay:()=>{const a=adv(),k=stu();if(!V.pick)return;setChoice(k.id,a.id,V.stage||1,V.pick);save();toast("Gute Fahrt!");go({s:"map",cls:V.cls,aid:V.aid,sid:V.sid})},
+  takeWay:()=>{const a=adv(),k=stu();if(!V.pick)return;setChoice(k.id,a.id,V.stage||1,V.pick);save();toast("Gute Fahrt!");goNext(a,k.id)},
   ziel:()=>{const a=adv(),k=stu();toast(goalReached(a,k.id)?"Du hast das Ziel erreicht!":"Hier wartet das Ziel. Fahr alle Inseln deines Weges ab.")},
   digit:d=>{const isl=adv().islands.find(i=>i.id===V.iid);if(V.val.length<String(isl.code).length){V.val+=d.d;render()}},
   del:()=>{V.val=V.val.slice(0,-1);render()}, clr:()=>{V.val="";render()}, checkCode,
   zoom:d=>zoom(d.id),
-  tFertig:()=>{const a=adv(),k=stu(),p=IP(k.id,a.id,V.iid);p.pending=true;p.at=Date.now();save();go({...V,s:"pend"})},
-  cmpStart:()=>{V.step=1;render()}, mark:d=>{V.marks[+d.i]=d.v;render()}, cmpDone,
+  tFertig:()=>{const a=adv(),k=stu(),p=IP(k.id,a.id,V.iid);p.pending=true;p.at=Date.now();V.visit=(V.visit||0)+1;save();go({...V,s:"pend"})},
+  cmpStart:()=>{V.step=1;render()},
+  cmpYes:()=>{const isl=adv().islands.find(i=>i.id===V.iid);if(isl&&isl.type==="mixed"){V.step=1;V.val="";V.res=null;return render()}cmpDone()},
+  cmpLater:()=>{V.step="later";render()}, mark:d=>{V.marks[+d.i]=d.v;render()}, cmpDone,
 };
 app.addEventListener("click",e=>{const t=e.target.closest("[data-act]");if(!t||!app.contains(t))return;
   const f=ACT[t.dataset.act]||TACT[t.dataset.act];if(f){e.preventDefault();f(t.dataset,t,e)}});
 app.addEventListener("keydown",e=>{if((e.key==="Enter"||e.key===" ")&&e.target.matches?.("g[data-act]")){e.preventDefault();e.target.dispatchEvent(new MouseEvent("click",{bubbles:true}))}});
 document.addEventListener("keydown",e=>{
   if(V.s!=="isl"||V.res||e.target.matches("input,textarea,select"))return;
-  const a=adv(),isl=a?.islands.find(i=>i.id===V.iid);if(!isl||isl.type!=="code")return;const n=String(isl.code).length;
+  const a=adv(),isl=a?.islands.find(i=>i.id===V.iid);if(!isl||!hasCode(isl)||(isl.type==="mixed"&&V.step!==1))return;const n=String(isl.code).length;
   if(/^[0-9]$/.test(e.key)&&V.val.length<n){V.val+=e.key;render()}
   else if(e.key==="Backspace"){V.val=V.val.slice(0,-1);render()}
   else if(e.key==="Enter"&&V.val.length===n)checkCode();
@@ -809,7 +878,8 @@ function teacher(){
   if(T.tab==="sol")body=tSolutions();
   if(T.tab==="classes")body=tClasses();
   if(T.tab==="settings")body=tSettings();
-  app.innerHTML=`<h2>Lehrkraft</h2>${top}${tabs}${body}`;
+  const undoBar=T.undo&&T.tab==="overview"?`<div class="infobar" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span>${esc(T.undo.label)}</span><button class="btn sm pri" data-act="undo">Rückgängig</button><button class="btn sm" data-act="undoClose">Ausblenden</button></div>`:"";
+  app.innerHTML=`<div class="row" style="justify-content:space-between;align-items:baseline"><h2>Lehrkraft</h2><span class="note">${window.APP_VERSION?"Version "+window.APP_VERSION:"Testversion"}</span></div>${top}${tabs}${undoBar}${body}${T.sheet&&T.tab==="overview"?sheetHtml():""}`;
   bindTeacher();
 }
 function classTabs(){return S.classes.length>1?`<div class="tabs">${S.classes.map(k=>`<button data-act="tCls" data-id="${k.id}" aria-pressed="${k.id===T.cls}">${esc(k.name)}</button>`).join("")}</div>`:""}
@@ -825,12 +895,15 @@ function tOverview(){
   const pend=st.filter(k=>a.islands.some(i=>peek(k.id,a.id,i.id)?.pending)).length;
   const grp=(n,t)=>n?`<th class="grp" colspan="${n}">${esc(t)}</th>`:"";
   const cell=(sid,i)=>{const p=peek(sid,a.id,i.id)||{},k=`${sid}|${i.id}`;
-    if(p.done)return `<button class="c-ok" data-act="resetIsl" data-k="${k}" title="Zurücksetzen">✓${p.tries?`<span class="note"> ${p.tries}✗</span>`:""}</button>`;
-    if(p.pending)return `<button class="mini ok" data-act="approve" data-k="${k}">Heft ok</button><button class="mini" data-act="reject" data-k="${k}">nochmal</button>`;
+    const when=p.at?`<span class="note" style="display:block;font-size:12px;line-height:1.1">${fmtTime(p.at)}</span>`:"";
+    const wt=wrongTimes(p),wlast=wt.length?wt[wt.length-1]:0,wtitle=wt.length?` title="Falsche Versuche: ${wt.map(fmtTime).join(", ")}"`:"";
+    const wwhen=wlast?`<span class="note" style="display:block;font-size:12px;line-height:1.1;color:#9A6A12">✗ ${wt.length>1?"zuletzt ":""}${fmtTime(wlast)}</span>`:"";
+    if(p.done)return `<button class="c-ok" data-act="cellInfo" data-k="${k}"${wtitle}>✓${p.tries?`<span class="note"> ${p.tries}✗</span>`:""}${when}</button>`;
+    if(p.pending)return `<button class="mini ok" data-act="approveQuick" data-k="${k}">Heft ok</button><button class="mini" data-act="cellInfo" data-k="${k}">…</button>${when}`;
     if(status(a,sid,i)==="closed")return `<span class="note">·</span>`;
-    if(p.locked)return `<button class="c-lock" data-act="reset" data-k="${k}">gesperrt ↺</button>`;
-    if(p.tries)return `<button class="c-try" data-act="reset" data-k="${k}" title="Fehlversuche zurücksetzen">${p.tries}✗</button>`;
-    return `<button class="note" data-act="tick" data-k="${k}" title="Abhaken">–</button>`};
+    if(p.locked)return `<button class="c-lock" data-act="cellInfo" data-k="${k}"${wtitle}>gesperrt${wwhen}</button>`;
+    if(p.tries)return `<button class="c-try" data-act="cellInfo" data-k="${k}"${wtitle}>${p.tries}✗${wwhen}</button>`;
+    return `<button class="note" data-act="cellInfo" data-k="${k}" title="Details">–</button>`};
   const stageCount=s=>s.R.length+(s.fork?1:0)+s.L1.length+s.L2.length+s.SP.length;
   const row1=multi?`<tr><th></th>${ST.map(s=>stageCount(s)?`<th class="grp" colspan="${stageCount(s)}" style="background:#E7D19E">Etappe ${s.k}${s.name?": "+esc(cut(s.name,20)):""}</th>`:"").join("")}<th></th></tr>`:"";
   const row2=`<tr><th></th>${ST.map(s=>`${grp(s.R.length,"Grundlagen")}${s.fork?`<th class="grp"></th>`:""}${grp(s.L1.length,a.b1||"Weg 1")}${grp(s.L2.length,a.b2||"Weg 2")}${grp(s.SP.length,"Sprinter")}`).join("")}<th class="grp"></th></tr>`;
@@ -841,19 +914,45 @@ function tOverview(){
   return h+`${pend?`<div class="infobar"><b>Kapitänskontrolle:</b> ${pend} ${pend===1?"Kind wartet":"Kinder warten"} auf dein „Heft ok“.</div>`:""}
   <div class="panel"><div class="row" style="justify-content:space-between"><h3 style="margin:0">${esc(c.name)} · ${esc(a.name)}: ${classSum(a,c)}${a.goal!==false?` von ${classGoal(a,c)}`:""} Sternen</h3>
     <div class="row"><button class="btn" data-act="toBeamer">Klassenkarte zeigen</button><button class="btn" data-act="exp">Als Tabelle sichern</button></div></div>
-  <p class="note">Tippe auf ein Feld: ✓ setzt die Insel zurück, „–“ hakt sie ab, „gesperrt“ und Fehlversuche werden zurückgesetzt, „Weg“ löscht die Wahl an der Gabelung. ↺ neben dem Namen setzt das ganze Abenteuer für dieses Kind zurück. Zurücksetzen und Abhaken brauchen zwei Tipps.</p>
+  <p class="note">Unter den Häkchen steht, wann die Insel geschafft wurde, in Orange mit ✗ der letzte falsche Versuch. Tippe auf ein Feld, um alle Versuche mit Uhrzeit zu sehen. Dort kannst du auch abhaken, freischalten oder zurücksetzen. Jede Änderung lässt sich danach rückgängig machen.</p>
   <div class="tw"><table><thead>${row1}${row2}${row3}</thead>
-  <tbody>${st.map(k=>`<tr><td>${esc(k.name)}${goalReached(a,k.id)?' <span class="c-ok" title="Ziel erreicht">⚑</span>':""} <button class="note" data-act="resetKid" data-k="${k.id}" title="Alles zurücksetzen" aria-label="${esc(k.name)} zurücksetzen">↺</button></td>
-    ${cols.map(x=>{if(x.i)return `<td>${cell(k.id,x.i)}</td>`;const ch=choiceOf(k.id,a.id,x.way);return `<td>${ch?`<button data-act="unchoose" data-k="${k.id}|${x.way}" title="Weg zurücksetzen">${ch}</button>`:'<span class="note">–</span>'}</td>`}).join("")}
+  <tbody>${st.map(k=>`<tr><td>${esc(k.name)}${goalReached(a,k.id)?' <span class="c-ok" title="Ziel erreicht">⚑</span>':""} <button class="note" data-act="kidInfo" data-k="${k.id}" title="Zurücksetzen" aria-label="${esc(k.name)}: Abenteuer zurücksetzen">↺</button></td>
+    ${cols.map(x=>{if(x.i)return `<td>${cell(k.id,x.i)}</td>`;const ch=choiceOf(k.id,a.id,x.way);return `<td>${ch?`<button data-act="wayInfo" data-k="${k.id}|${x.way}" title="Weg">${ch}</button>`:'<span class="note">–</span>'}</td>`}).join("")}
     <td><b>${kidStars(a,k.id)}</b></td></tr>`).join("")}</tbody></table></div>
   <p class="note" id="em"></p></div>${errorPanel(a,c)}`;
 }
 
+function attemptsHtml(i,p){
+  const n=String(i.code||"").length,L=LET;
+  if(p.log&&p.log.length)return p.log.slice().reverse().map(e=>{
+    if(e.cmp)return `<div class="err-row"><b>${fmtTimeLong(e.at)}</b><span>fertig verglichen${e.check?" · Kapitänskontrolle":""}</span></div>`;
+    const digits=[...String(e.v)].map((d,j)=>`<span style="display:inline-block;min-width:18px;text-align:center;font-weight:900;color:${String(i.code)[j]===d?"var(--ok)":"var(--bad)"}">${esc(d)}</span>`).join("");
+    const wrong=[...String(e.v)].map((d,j)=>String(i.code)[j]===d?null:posLabel(i,j)).filter(x=>x!==null);
+    return `<div class="err-row"><b>${fmtTimeLong(e.at)}</b><span>${digits}</span><span class="note">${e.ok?"richtig":"falsch"+(wrong.length&&n>1?" bei "+wrong.join(", "):"")}</span></div>`}).join("");
+  const g={};(p.errs||[]).forEach(e=>{(g[e.at]||=[]).push(e)});
+  const rows=Object.entries(g).sort((x,y)=>y[0]-x[0]).map(([t,es])=>`<div class="err-row"><b>${fmtTimeLong(+t)}</b><span class="note">falsch${n>1?" bei "+es.map(e=>posLabel(i,e.pos)).join(", "):""}</span></div>`);
+  return rows.join("")||`<p class="note">Noch keine Versuche gespeichert.</p>`}
+function sheetHtml(){
+  const sh=T.sheet,a=S.adventures.find(x=>x.id===T.aid),c=S.classes.find(x=>x.id===T.cls);if(!a||!c)return"";
+  const kid=c.students.find(s=>s.id===sh.sid);if(!kid)return"";
+  const btn=(op,label,cls)=>sh.confirm===op?`<div class="row" style="background:var(--bad-soft);padding:10px;border-radius:12px"><b style="color:var(--bad)">Wirklich?</b><button class="btn warn" data-act="sheetDo" data-op="${op}">Ja, ${label.toLowerCase()}</button><button class="btn" data-act="sheetCancel">Nein</button></div>`:`<button class="btn ${cls||""}" data-act="sheetDo" data-op="${op}">${label}</button>`;
+  let title="",body="",acts="";
+  if(sh.kind==="isl"){const i=a.islands.find(x=>x.id===sh.iid);if(!i)return"";const p=peek(kid.id,a.id,i.id)||{};
+    title=`${esc(kid.name)} · ${esc(i.name)}`;
+    const stt=p.done?`<span class="c-ok">geschafft</span>${p.at?" am "+fmtTimeLong(p.at):""}`:p.pending?`<b>Wartet auf Kapitänskontrolle</b>${p.at?" seit "+fmtTimeLong(p.at):""}`:p.locked?`<span class="c-lock">gesperrt</span> nach ${p.tries} Fehlversuchen`:p.tries?`offen, ${p.tries} Fehlversuche`:"offen";
+    body=`<p style="font-size:18px;margin:0 0 10px">${stt}</p>${hasCode(i)?`<p class="note" style="margin:0 0 6px">Code: <b>${esc(codeText(i))}</b>. Grün = richtige Ziffer, Rot = falsche.</p>`:""}<h4 style="margin:10px 0 4px">Alle Versuche</h4><div style="max-height:40vh;overflow:auto">${attemptsHtml(i,p)}</div>`;
+    if(p.pending)acts+=btn("approve","Heft ok","pri")+btn("reject","Nochmal machen lassen","warn");
+    if(!p.done&&!p.pending)acts+=btn("tick","Abhaken","pri");
+    if(p.tries||p.locked)acts+=btn("resetTries",p.locked?"Entsperren":"Fehlversuche zurücksetzen","warn");
+    if(p.done)acts+=btn("resetIsl","Insel zurücksetzen","warn")}
+  else if(sh.kind==="kid"){title=`${esc(kid.name)} · ${esc(a.name)}`;body=`<p>Setzt alle Inseln, Wege und Fehlversuche dieses Abenteuers für ${esc(kid.name)} zurück. Die Sterne gehen dabei verloren.</p>`;acts=btn("resetKid","Ganzes Abenteuer zurücksetzen","warn")}
+  else if(sh.kind==="way"){const ch=choiceOf(kid.id,a.id,sh.k);title=`${esc(kid.name)} · Weggabelung${stagesOf(a).length>1?" Etappe "+sh.k:""}`;body=`<p>Gewählt: <b>${esc(ch===1?a.b1||"Weg 1":a.b2||"Weg 2")}</b></p><p class="note">Löschst du die Wahl, kann ${esc(kid.name)} an der Gabelung neu wählen. Schon geschaffte Inseln bleiben geschafft.</p>`;acts=btn("unchoose","Wahl löschen","warn")}
+  return `<div class="sheet-bg" data-act="sheetBg"><div class="sheet" role="dialog" aria-label="Details"><div class="row" style="justify-content:space-between;align-items:flex-start"><h3 style="margin:0">${title}</h3><button class="btn sm" data-act="sheetClose">Schließen</button></div>${body}<div class="row" style="margin-top:14px">${acts}</div></div></div>`}
 function errorPanel(a,c){
   const blocks=[];
-  a.islands.filter(i=>i.type==="code").forEach(i=>{const by={};const n=String(i.code||"").length;
+  a.islands.filter(hasCode).forEach(i=>{const by={};const n=String(i.code||"").length;
     c.students.forEach(k=>{(peek(k.id,a.id,i.id)?.errs||[]).forEach(e=>{const t=(i.traps||[]).find(t=>t.pos===e.pos&&t.d===e.d);
-      const key=(n>1?LET[e.pos]+") ":"")+(t?t.text:"andere Fehler");(by[key]||=new Set()).add(k.name)})});
+      const key=(n>1?posLabel(i,e.pos)+") ":"")+(t?t.text:"andere Fehler");(by[key]||=new Set()).add(k.name)})});
     const rows=Object.entries(by).sort((x,y)=>y[1].size-x[1].size);
     if(rows.length)blocks.push(`<h4>${esc(i.name)}</h4>${rows.map(([k,set])=>`<div class="err-row"><b>${set.size}×</b><span>${esc(k)}</span><span class="note">${[...set].sort((x,y)=>x.localeCompare(y,"de")).map(esc).join(", ")}</span></div>`).join("")}`)});
   return `<div class="panel"><h3>Typische Fehler</h3><p class="note">Aus allen falschen Code-Eingaben. Die Fehler-Namen kommen aus den Fallen-Tipps der Inseln. „Andere Fehler“ sind falsche Ziffern ohne passende Falle.</p>
@@ -862,14 +961,16 @@ function errorPanel(a,c){
 function tSolutions(){
   if(!S.adventures.length)return `<div class="empty">Noch kein Abenteuer.</div>`;
   if(!S.adventures.find(a=>a.id===T.sol))T.sol=S.adventures[0].id;const a=S.adventures.find(x=>x.id===T.sol),multi=stagesOf(a).length>1;
-  const SECN={route:"Grundlagen",wp1:a.b1||"Weg 1",wp2:a.b2||"Weg 2",sprint:"Sprinter"},TYP={code:"Code-Insel",compare:"Vergleichs-Insel",teacher:"Lehrkraft-Insel"};
+  const SECN={route:"Grundlagen",wp1:a.b1||"Weg 1",wp2:a.b2||"Weg 2",sprint:"Sprinter"},TYP={code:"Code-Insel",compare:"Vergleichs-Insel",teacher:"Lehrkraft-Insel",mixed:"Gemischte Insel"};
   const card=i=>{const c=String(i.code||""),w=trapWarnings(i);
     return `<div class="panel sol"><h3>${esc(i.name)} ${multi?`<span class="tag">Etappe ${stageOf(i)}</span>`:""}<span class="tag">${esc(SECN[i.sec])}</span><span class="tag">${TYP[i.type]}</span><span class="tag">${"★".repeat(+i.stars||0)}</span></h3>
-    ${i.type==="code"?(c?`<div class="codeview">${[...c].map((d,k)=>`<span>${c.length>1?`<small>${LET[k]}</small>`:""}${d}</span>`).join("")}</div>`:`<p class="c-lock">Code fehlt.</p>`):""}
-    ${(i.traps||[]).length?`<h4>Fallen</h4>${i.traps.map(t=>`<div class="err-row"><b>${LET[t.pos]}) ${esc(t.d)}</b><span>${esc(t.text)}</span></div>`).join("")}`:""}
+    ${hasCode(i)?(c?(()=>{const g=groupsOf(i);if(!g)return `<div class="codeview">${[...c].map((d,k)=>`<span>${c.length>1?`<small>${LET[k]}</small>`:""}${d}</span>`).join("")}</div>`;let o=0;
+      return `<div class="row" style="gap:14px;align-items:flex-start">${g.map(x=>{const s=o;o+=x.n;return `<div><div class="note" style="font-weight:900">${esc(x.label)}</div><div class="codeview">${[...c.slice(s,s+x.n)].map((d,k)=>`<span><small>${LET[k]}</small>${d}</span>`).join("")}</div></div>`}).join("")}</div>`})():`<p class="c-lock">Code fehlt.</p>`):""}
+    ${i.type==="mixed"?`<p class="note" style="font-size:15px">Vergleichsteil an der Lösungsstation: <b>${esc(i.cmpText||"")}</b></p>`:""}
+    ${(i.traps||[]).length?`<h4>Fallen</h4>${i.traps.map(t=>`<div class="err-row"><b>${esc(posLabel(i,t.pos)||LET[t.pos])}) ${esc(t.d)}</b><span>${esc(t.text)}</span></div>`).join("")}`:""}
     ${w.length?`<p class="c-lock">${w.map(esc).join(" · ")}</p>`:""}
     ${i.hint?`<p class="note">Hinweis für die Kinder: ${esc(i.hint)}</p>`:""}
-    <h4>Lösungsfotos${i.type==="compare"?" (sehen die Kinder nach dem Rechnen)":" (nur hier sichtbar)"}</h4>
+    <h4>Lösungsfotos${(i.type==="compare"||i.type==="mixed")&&i.showPhoto?" (die Kinder sehen sie am iPad)":" (nur für dich und die Schulbegleitung)"}</h4>
     <div class="phs">${(i.photos||[]).map(id=>`<div class="ph"><button data-act="zoomT" data-id="${id}" style="background:none;padding:0" aria-label="Foto groß"><img data-ph="${id}" alt="Lösungsfoto"></button><button class="x" data-act="delPh" data-isl="${i.id}" data-id="${id}" aria-label="Foto löschen">✕</button></div>`).join("")}
       <label class="addph" for="ph-${i.id}">+ Foto aufnehmen oder wählen</label><input type="file" id="ph-${i.id}" data-ph-add="${i.id}" accept="image/*" multiple style="display:none"></div></div>`};
   return `${S.adventures.length>1?`<div class="tabs">${S.adventures.map(x=>`<button data-act="tSol" data-id="${x.id}" aria-pressed="${x.id===a.id}">${esc(x.name)}</button>`).join("")}</div>`:""}
@@ -883,7 +984,7 @@ function importPanel(mode){
     out=`<div class="imp">${p.name&&mode==="new"?`<p><b>Abenteuer:</b> ${esc(p.name)}${p.goalText?` · Ziel: ${esc(p.goalText)}`:""}</p>`:""}
       ${p.stageNames.length>1?`<p><b>${p.stageNames.length} Etappen erkannt:</b> ${p.stageNames.map((n,i)=>esc(n||"Etappe "+(i+1))).join(" · ")}. Jede weitere Etappe öffnet sich erst, wenn du sie in der Übersicht freigibst.</p>`:""}
       ${p.islands.length?`<p><b>${p.islands.length} ${p.islands.length===1?"Insel":"Inseln"} erkannt:</b></p><ul>${p.islands.map(i=>{const w=trapWarnings(i);
-        return `<li>${p.stageNames.length>1?`E${i.stage} · `:""}${esc(i.name)} · ${i.type==="code"?`Code ${esc(i.code||"?")}`:i.type==="compare"?"Vergleich (Foto danach hinzufügen)":"Lehrkraft"} · ${i.stars} ★${i.traps.length?` · ${i.traps.length} ${i.traps.length===1?"Falle":"Fallen"}`:""}${i.sec!=="route"?` · ${({wp1:"Wahlpflicht 1",wp2:"Wahlpflicht 2",sprint:"Sprinter"})[i.sec]}`:""}${w.length?` <span class="bad">(${w.map(esc).join(", ")})</span>`:""}</li>`}).join("")}</ul>`:`<p class="bad">Keine INSEL-Zeile gefunden.</p>`}
+        return `<li>${p.stageNames.length>1?`E${i.stage} · `:""}${esc(i.name)} · ${i.type==="code"?`Code ${esc(codeText(i)||"?")}`:i.type==="mixed"?`Code ${esc(codeText(i)||"?")} + Vergleich ${esc(i.cmpText||"")}`:i.type==="compare"?"Vergleich":"Lehrkraft"} · ${i.stars} ★${i.traps.length?` · ${i.traps.length} ${i.traps.length===1?"Falle":"Fallen"}`:""}${i.sec!=="route"?` · ${({wp1:"Wahlpflicht 1",wp2:"Wahlpflicht 2",sprint:"Sprinter"})[i.sec]}`:""}${w.length?` <span class="bad">(${w.map(esc).join(", ")})</span>`:""}</li>`}).join("")}</ul>`:`<p class="bad">Keine INSEL-Zeile gefunden.</p>`}
       ${p.errors.length?`<ul class="bad">${p.errors.map(e=>`<li>${esc(e)}</li>`).join("")}</ul>`:""}
       ${p.islands.length?`<button class="btn pri" data-act="impGo">${mode==="new"?"Abenteuer anlegen":"Inseln hinzufügen"}</button>`:""}</div>`}
   return `<div class="panel"><h3>${mode==="new"?"Abenteuer aus Import-Text anlegen":"Inseln aus Import-Text hinzufügen"}</h3>
@@ -904,25 +1005,27 @@ function tAdvList(){
       <p class="note" style="margin:4px 0 0">${a.active?"aktiv":"pausiert"} · ${a.islands.length} Inseln · ${names.length?esc(names.join(", ")):"noch keiner Klasse zugeordnet"}</p></div>
       <div class="row"><button class="btn pri" data-act="editAdv" data-id="${a.id}">Bearbeiten</button><button class="btn" data-act="copyAdv" data-id="${a.id}">Kopieren</button><button class="btn" data-act="expOne" data-id="${a.id}">Exportieren</button><button class="btn warn" data-act="delAdv" data-id="${a.id}">Löschen</button></div></div></div>`}).join(""):`<div class="empty">Noch kein Abenteuer.</div>`}`;
 }
+function photoBlock(i){return `<div style="grid-column:1/-1"><label class="cb" style="margin-top:6px"><input type="checkbox" data-if="showPhoto" data-id="${i.id}" ${i.showPhoto?"checked":""}> Lösungsfoto den Kindern am iPad zeigen</label>
+  <p class="note" style="margin:4px 0 0">${i.showPhoto?"Die Kinder sehen das Foto am iPad und vergleichen dort.":"Standard: Die Kinder vergleichen an der Lösungsstation und bestätigen am iPad nur „verglichen“. Fotos sind dann nur für dich und die Schulbegleitung."}</p>
+  <div class="phs">${(i.photos||[]).map(id=>`<div class="ph"><button data-act="zoomT" data-id="${id}" style="background:none;padding:0" aria-label="Foto groß"><img data-ph="${id}" alt="Lösungsfoto"></button><button class="x" data-act="delPh" data-isl="${i.id}" data-id="${id}" aria-label="Foto löschen">✕</button></div>`).join("")}
+  <label class="addph" for="ph-${i.id}">+ Foto aufnehmen oder wählen</label><input type="file" id="ph-${i.id}" data-ph-add="${i.id}" accept="image/*" multiple style="display:none"></div></div>`}
 function tEdit(){
   const a=S.adventures.find(x=>x.id===T.edit);if(!a){T.edit=null;return tAdvList()}
   const ST=stagesOf(a),multi=ST.length>1;
   const row=(i,list)=>{const k=list.indexOf(i),s=ST[stageOf(i)-1];
     let ext="";
     let traps="";
-    if(i.type==="code"){ext=`<input type="text" inputmode="numeric" data-if="code" data-id="${i.id}" value="${esc(i.code)}" placeholder="Code, z. B. 47291" class="${i.code?"":"miss"}" aria-label="Code">`;
+    if(hasCode(i)){ext=`<div class="ext" style="flex-direction:column;align-items:stretch"><input type="text" data-if="codeg" data-id="${i.id}" value="${esc(codeText(i))}" placeholder="47291 oder Nr. 1 = 4718 | Nr. 2 = 302" class="${i.code?"":"miss"}" aria-label="Code">${i.type==="mixed"?`<input type="text" data-if="cmpText" data-id="${i.id}" value="${esc(i.cmpText||"")}" placeholder="Was wird verglichen? z. B. Nr. 2 und 3" aria-label="Vergleichsteil">`:""}</div>`;
       const w=trapWarnings(i).filter(x=>x!=="Code fehlt");
       traps=`<details><summary>Fallen-Tipps (${i.traps.length})${w.length?` <span class="c-lock">· ${w.map(esc).join(", ")}</span>`:""}</summary>
-        <textarea data-if="traps" data-id="${i.id}" placeholder="c 7 = Übertrag vergessen" aria-label="Fallen-Tipps">${esc(i.traps.map(trapLine).join("\n"))}</textarea>
-        <p class="note">Eine Falle pro Zeile: Teilaufgabe, Ziffer der Falle, =, kurzer Tipp. Tippt ein Kind diese Ziffer, sieht es den Tipp.</p></details>`}
+        <textarea data-if="traps" data-id="${i.id}" placeholder="${groupsOf(i)?"Nr. 2 b 7 = Übertrag vergessen?":"c 7 = Übertrag vergessen?"}" aria-label="Fallen-Tipps">${esc(i.traps.map(t=>trapLine(t,i)).join("\n"))}</textarea>
+        <p class="note">Eine Falle pro Zeile: Teilaufgabe${groupsOf(i)?" mit Gruppe (z. B. Nr. 2 b)":""}, Ziffer der Falle, =, kurzer Tipp. Tippt ein Kind diese Ziffer, sieht es den Tipp.</p></details>${i.type==="mixed"?photoBlock(i):""}`}
     if(i.type==="compare"){ext=`<div class="ext"><input type="text" data-if="hint" data-id="${i.id}" value="${esc(i.hint)}" placeholder="Zusätzlicher Hinweis (freiwillig)" aria-label="Hinweis zur Lösung"></div>`;
-      traps=`<div style="grid-column:1/-1"><p class="note" style="margin:4px 0 0">Lösungsfoto: Das sehen die Kinder nach „Ja, Lösung vergleichen“.${i.photos.length?"":` <span class="c-lock">Noch kein Foto. Ohne Foto sehen die Kinder nur den Hinweis.</span>`}</p>
-        <div class="phs">${i.photos.map(id=>`<div class="ph"><button data-act="zoomT" data-id="${id}" style="background:none;padding:0" aria-label="Foto groß"><img data-ph="${id}" alt="Lösungsfoto"></button><button class="x" data-act="delPh" data-isl="${i.id}" data-id="${id}" aria-label="Foto löschen">✕</button></div>`).join("")}
-        <label class="addph" for="ph-${i.id}">+ Foto aufnehmen oder wählen</label><input type="file" id="ph-${i.id}" data-ph-add="${i.id}" accept="image/*" multiple style="display:none"></div></div>`}
+      traps=photoBlock(i)}
     if(i.type==="teacher")ext=`<span class="note">Kinder können hier nichts eingeben. Du hakst in der Übersicht ab, z. B. für Plakat, Zeichnung oder Vortrag.</span>`;
     const after=i.sec==="sprint"&&s&&s.fork?`<p class="note" style="grid-column:1/-1;margin:0">Zweigt nach der Zusammenführung ab und öffnet sich, sobald eine Wahlpflicht-Insel geschafft ist.</p>`:i.sec==="sprint"?`<label class="note" style="display:flex;gap:6px;align-items:center;grid-column:1/-1">erreichbar ab <select data-if="after" data-id="${i.id}"><option value="">Start</option>${s.R.map(r=>`<option value="${r.id}" ${i.after===r.id?"selected":""}>nach ${esc(r.name)}</option>`).join("")}</select></label>`:"";
     return `<div class="isl-row"><input type="text" data-if="name" data-id="${i.id}" value="${esc(i.name)}" aria-label="Name der Insel">
-      <select data-if="type" data-id="${i.id}" aria-label="Art"><option value="code" ${i.type==="code"?"selected":""}>Code-Insel</option><option value="compare" ${i.type==="compare"?"selected":""}>Vergleichs-Insel</option><option value="teacher" ${i.type==="teacher"?"selected":""}>Lehrkraft-Insel</option></select>
+      <select data-if="type" data-id="${i.id}" aria-label="Art"><option value="code" ${i.type==="code"?"selected":""}>Code-Insel</option><option value="compare" ${i.type==="compare"?"selected":""}>Vergleichs-Insel</option><option value="mixed" ${i.type==="mixed"?"selected":""}>Gemischt (Code + Vergleich)</option><option value="teacher" ${i.type==="teacher"?"selected":""}>Lehrkraft-Insel</option></select>
       <select data-if="stars" data-id="${i.id}" aria-label="Sterne">${[1,2,3,4,5].map(n=>`<option value="${n}" ${+i.stars===n?"selected":""}>${n} ★</option>`).join("")}</select>
       ${ext}<div class="ctl"><button class="btn sm" data-act="mvIsl" data-id="${i.id}" data-d="-1" ${k===0?"disabled":""} aria-label="Nach oben">↑</button><button class="btn sm" data-act="mvIsl" data-id="${i.id}" data-d="1" ${k===list.length-1?"disabled":""} aria-label="Nach unten">↓</button><button class="btn sm warn" data-act="delIsl" data-id="${i.id}" aria-label="Insel löschen">✕</button></div>${after}${traps}</div>`};
   const sec=(st,key,title,note,cls)=>{const L=a.islands.filter(i=>i.sec===key&&stageOf(i)===st.k);return `<div class="sec ${cls||""}"><h4>${title}</h4>${note?`<p class="note" style="margin:-4px 0 6px">${note}</p>`:""}
@@ -943,6 +1046,7 @@ function tEdit(){
     ${a.goal!==false?`<p class="note" id="goalNote">${goalNote(a)}</p>`:`<p class="note">Ohne Klassenziel sehen die Kinder nur ihre eigenen Sterne. Die Klassenkarte zeigt dann nur die Inseln.</p>`}
     <div class="row" style="margin-top:10px;gap:18px">
       <label class="cb"><input type="checkbox" data-af="active" ${a.active?"checked":""}> aktiv (Kinder sehen es)</label>
+      <label class="cb"><input type="checkbox" data-af="direct" ${a.direct!==false?"checked":""}> Nach dem Namen direkt zum Zahlenschloss der nächsten Insel</label>
       <label class="cb"><input type="checkbox" data-af="chest" ${a.chest!==false?"checked":""}> Schatztruhe beim Code (öffnet sich, Münzen fliegen)</label>
       ${ST.length>1?`<label class="cb"><input type="checkbox" data-af="gate" ${a.gate?"checked":""}> Neue Etappen erst nach meiner Freigabe öffnen</label>`:""}
 </div>
@@ -953,7 +1057,7 @@ function tEdit(){
     ${ST.map(stageBox).join("")}
     <div class="row" style="margin-top:14px"><button class="btn" data-act="addStage">+ Etappe hinzufügen</button>
       <span class="note">Etappen sind Abschnitte nacheinander, jede mit eigenen Grundlagen, Gabelung und Sprintern. Eine Etappe geht erst auf, wenn die vorige geschafft ist.</span></div>
-    <p class="note" style="margin-top:12px"><b>Code-Insel:</b> Kinder tippen den Code von der Schatzkarte. <b>Vergleichs-Insel:</b> Kinder sehen dein Lösungsfoto und bestätigen „fertig verglichen“. <b>Lehrkraft-Insel:</b> Nur du hakst ab. Alle Codes und Fotos auf einen Blick findest du unter „Lösungen“.</p></div>
+    <p class="note" style="margin-top:12px"><b>Code-Insel:</b> Kinder tippen den Code von der Schatzkarte. <b>Vergleichs-Insel:</b> Kinder vergleichen an der Lösungsstation und bestätigen am iPad „verglichen“. <b>Gemischt:</b> erst Frage nach der Lösungsstation, dann Code für den Rest. <b>Lehrkraft-Insel:</b> Nur du hakst ab. Alle Codes und Fotos auf einen Blick findest du unter „Lösungen“.</p></div>
   ${importPanel("add")}
   <div class="panel"><h3>So sieht die Karte aus</h3><div class="map" id="preview">${mapSvg(a,{mode:"preview"})}</div></div>`;
 }
@@ -968,16 +1072,20 @@ function tClasses(){
     <p class="note" id="cm"></p>
     <p class="note">Die Namen bleiben nur auf diesem Gerät, in diesem Browser. Sie werden nirgends hochgeladen.</p></div>
     ${S.classes.map(c=>`<div class="panel"><div class="row" style="justify-content:space-between"><h3 style="margin:0">${esc(c.name)} · ${c.students.length} Kinder</h3>
-      <div class="row"><button class="btn" data-act="addKid" data-id="${c.id}">Kind hinzufügen</button><button class="btn warn" data-act="resetCls" data-id="${c.id}">Fortschritt löschen</button><button class="btn warn" data-act="delCls" data-id="${c.id}">Klasse löschen</button></div></div></div>`).join("")}`;
+      <div class="row"><button class="btn" data-act="addKid" data-id="${c.id}">Kind hinzufügen</button><button class="btn warn" data-act="resetCls" data-id="${c.id}">Fortschritt löschen</button><button class="btn warn" data-act="delCls" data-id="${c.id}">Klasse löschen</button></div></div>
+      <div class="row" style="margin-top:12px"><label class="note" for="ccr-${c.id}">Kapitänskontrolle für ${esc(c.name)}:</label><select id="ccr-${c.id}" data-ccr="${c.id}">${rateOptions(c.checkRate,"wie Standard ("+(RATES.find(r=>sameRate(S.checkRate,r[0]))||[0,"eigene"])[1]+")")}</select></div>
+      <details style="margin-top:10px"><summary class="note" style="cursor:pointer;font-size:15px">Kontrolle für einzelne Kinder (nur hier sichtbar)${c.students.some(s=>s.checkRate!=null&&s.checkRate!=="")?` · ${c.students.filter(s=>s.checkRate!=null&&s.checkRate!=="").length} angepasst`:""}</summary>
+        <p class="note">Die Kinder sehen davon nichts. Die Kontrolle kommt weiterhin zufällig, nur häufiger oder seltener.</p>
+        <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:6px 16px">${[...c.students].sort((x,y)=>x.name.localeCompare(y.name,"de")).map(s=>`<label class="row" style="justify-content:space-between;gap:8px;font-size:15px"><span>${esc(s.name)}</span><select data-kcr="${c.id}|${s.id}" aria-label="Kontrolle für ${esc(s.name)}">${rateOptions(s.checkRate,"wie Klasse")}</select></label>`).join("")}</div></details></div>`).join("")}`;
 }
 function tSettings(){
   const ds=daysSince(S.lastBackup);
   return `<div class="panel"><h3>Fehlversuche pro Code-Insel</h3>
     <p class="note">Nach so vielen falschen Eingaben ist die Insel gesperrt, bis du sie in der Übersicht freischaltest. 0 = unbegrenzt.</p>
     <div class="row"><input type="number" id="mt" min="0" max="9" value="${S.maxTries}" style="width:90px"><button class="btn pri" data-act="saveTries">Speichern</button></div></div>
-  <div class="panel"><h3>Kapitänskontrolle bei Vergleichs-Inseln</h3>
-    <p class="note">So oft wird ein Kind nach dem Vergleichen zufällig zu dir geschickt. Die Sterne gibt es dann erst nach deinem „Heft ok“.</p>
-    <div class="row"><select id="cr">${[[0,"nie"],[.2,"etwa jedes 5. Mal"],[.25,"etwa jedes 4. Mal"],[.34,"etwa jedes 3. Mal"],[.5,"etwa jedes 2. Mal"],[1,"immer"]].map(([v,l])=>`<option value="${v}" ${+S.checkRate===v?"selected":""}>${l}</option>`).join("")}</select><button class="btn pri" data-act="saveRate">Speichern</button></div></div>
+  <div class="panel"><h3>Kapitänskontrolle bei Vergleichs-Inseln: Standard</h3>
+    <p class="note">So oft wird ein Kind nach dem Vergleichen zufällig zu dir geschickt. Die Sterne gibt es dann erst nach deinem „Heft ok“. Das gilt für alle Klassen, bei denen du unter „Klassen“ nichts anderes einstellst. Dort kannst du auch einzelne Kinder häufiger kontrollieren.</p>
+    <div class="row"><select id="cr">${rateOptions(S.checkRate)}</select><button class="btn pri" data-act="saveRate">Speichern</button></div></div>
   <div class="panel"><h3>Dein Name für die Kinder</h3><p class="note">Erscheint in „Frag …“ und „Zeig dein Heft …“.</p>
     <div class="row"><input type="text" id="tn" value="${esc(S.teacher)}"><button class="btn pri" data-act="saveName">Speichern</button></div></div>
   <div class="panel"><h3>Ton</h3><label class="cb"><input type="checkbox" id="snd" ${S.sound?"checked":""}> Kurzer Klang bei richtigem und falschem Code</label></div>
@@ -1027,13 +1135,17 @@ app.addEventListener("change",async e=>{
     catch(err){if(m)m.textContent="Das Foto konnte nicht gespeichert werden. Ist der Speicher voll?";toast("Foto nicht gespeichert.")}
     return}
   if(t.dataset.impfile&&V.s==="teacher"){const f=t.files[0];if(!f)return;try{const text=cleanImport(await f.text());T.imp={mode:t.dataset.impfile,text,parsed:parseImport(text)};render()}catch(err){toast("Die Datei konnte nicht gelesen werden.")}return}
+  if(t.dataset.ccr&&V.s==="teacher"){const c=S.classes.find(x=>x.id===t.dataset.ccr);if(c){c.checkRate=t.value===""?null:+t.value;save();toast("Gespeichert.")}return}
+  if(t.dataset.kcr&&V.s==="teacher"){const [cid,sid]=t.dataset.kcr.split("|");const k=S.classes.find(x=>x.id===cid)?.students.find(s=>s.id===sid);if(k){k.checkRate=t.value===""?null:+t.value;save();toast("Gespeichert.")}return}
   const a=S.adventures.find(x=>x.id===T.edit);if(!a||V.s!=="teacher")return;
   if(t.dataset.af){const f=t.dataset.af;a[f]=t.type==="checkbox"?t.checked:f==="goalPerKid"?(parseInt(t.value,10)||0):t.value.trim();save();
     if(f==="b1"||f==="b2"||f==="goal")return render();refreshPreview(a);return}
   if(t.dataset.sn){const k=+t.dataset.sn;a.stageNames=a.stageNames||[];while(a.stageNames.length<k)a.stageNames.push("");a.stageNames[k-1]=t.value.trim();save();refreshPreview(a);return}
   if(t.dataset.acl){const id=t.dataset.acl;a.classIds=t.checked?[...new Set([...a.classIds,id])]:a.classIds.filter(x=>x!==id);save();refreshPreview(a);return}
   if(t.dataset.if){const i=a.islands.find(x=>x.id===t.dataset.id);if(!i)return;const f=t.dataset.if;
-    if(f==="traps"){const lines=t.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);const ok=lines.map(parseTrap);
+    if(f==="codeg"){const r=parseCodeText(t.value);if(r.error){toast(r.error);return}i.code=r.code;i.groups=r.groups;t.classList.toggle("miss",!i.code);save();refreshPreview(a);return}
+    if(f==="showPhoto"){i.showPhoto=t.checked;save();return render()}
+    if(f==="traps"){const lines=t.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);const ok=lines.map(l=>parseTrapFor(i,l));
       i.traps=ok.filter(Boolean);save();if(ok.some(x=>!x))toast("Eine Zeile verstehe ich nicht. Bitte so: c 7 = Übertrag vergessen");return}
     i[f]=f==="stars"?+t.value:f==="parts"?Math.max(1,Math.min(16,parseInt(t.value,10)||1)):t.value.trim();
     if(f==="code")t.classList.toggle("miss",!i.code);
@@ -1046,7 +1158,7 @@ const TACT={
     if(!/^\d{4,}$/.test(a)){pm.textContent="Bitte mindestens 4 Ziffern.";return}if(a!==b){pm.textContent="Die PINs sind nicht gleich.";return}
     S.pin=a;save();T.unlocked=true;render()},
   tryPin:()=>{const pin=getEl("pin");if(pin.value.trim()===S.pin){T.unlocked=true;render()}else{getEl("pm").textContent="Falsche PIN.";pin.value=""}},
-  tab:d=>{T.tab=d.t;T.edit=null;T.imp=null;render()},
+  tab:d=>{T.tab=d.t;T.edit=null;T.imp=null;T.sheet=null;T.undo=null;render()},
   tSol:d=>{T.sol=d.id;render()}, zoomT:d=>zoom(d.id),
   delPh:(d,b)=>{if(!confirmInline(b,"?"))return;const isl=S.adventures.flatMap(a=>a.islands).find(i=>i.id===d.isl);if(isl)isl.photos=isl.photos.filter(x=>x!==d.id);save();gcPhotos();render()},
   impCheck:d=>{const text=cleanImport(getEl("imp-"+d.mode).value);T.imp={mode:d.mode,text,parsed:parseImport(text)};render()},
@@ -1060,11 +1172,35 @@ const TACT={
     try{await navigator.clipboard.writeText(KI_VORLAGE);m.textContent="Kopiert. Füge sie in einen neuen Chat ein."}
     catch(e){const box=getEl("cpbox-"+mode);box.style.display="block";box.style.minHeight="260px";box.focus();box.select();m.textContent="Kopieren ging nicht automatisch. Markiere den Text unten und kopiere ihn."}}, tCls:d=>{T.cls=d.id;render()}, tAdv:d=>{T.aid=d.id;render()},
   undo:(d,b)=>{if(!confirmInline(b,"zurück?"))return;const {p}=findP(d.k);p.done=false;p.pending=false;save();render()},
+  cellInfo:d=>{const [sid,iid]=d.k.split("|");T.sheet={kind:"isl",sid,iid};render()},
+  kidInfo:d=>{T.sheet={kind:"kid",sid:d.k};render()},
+  wayInfo:d=>{const [sid,k]=d.k.split("|");T.sheet={kind:"way",sid,k:+k||1};render()},
+  sheetClose:()=>{T.sheet=null;render()}, sheetCancel:()=>{if(T.sheet)T.sheet.confirm=null;render()},
+  sheetBg:(d,b,e)=>{if(e.target===b){T.sheet=null;render()}},
+  sheetDo:d=>{const sh=T.sheet;if(!sh)return;const op=d.op;
+    if(["reject","resetTries","resetIsl","resetKid","unchoose"].includes(op)&&sh.confirm!==op){sh.confirm=op;return render()}
+    const a=S.adventures.find(x=>x.id===T.aid),c=S.classes.find(x=>x.id===T.cls),kid=c&&c.students.find(s=>s.id===sh.sid);if(!a||!kid)return;
+    const snap=JSON.stringify(S.progress[sh.sid]?.[a.id]??null),isl=sh.iid&&a.islands.find(x=>x.id===sh.iid);let lab="";
+    if(sh.kind==="isl"){const p=IP(sh.sid,a.id,sh.iid);
+      if(op==="approve"){p.pending=false;p.done=true;p.okAt=Date.now();lab="Heft ok"}
+      if(op==="reject"){p.pending=false;p.done=false;lab="nochmal machen lassen"}
+      if(op==="tick"){p.done=true;p.pending=false;p.at=Date.now();p.byTeacher=true;lab="abgehakt"}
+      if(op==="resetTries"){lab=p.locked?"entsperrt":"Fehlversuche zurückgesetzt";p.tries=0;p.locked=false}
+      if(op==="resetIsl"){Object.assign(p,{done:false,pending:false,tries:0,locked:false});lab="Insel zurückgesetzt"}
+      lab+=" ("+(isl?isl.name:"")+")"}
+    if(op==="resetKid"){if(S.progress[sh.sid])delete S.progress[sh.sid][a.id];lab="ganzes Abenteuer zurückgesetzt"}
+    if(op==="unchoose"){setChoice(sh.sid,a.id,sh.k,null);lab="Wahl an der Gabelung gelöscht"}
+    T.undo={sid:sh.sid,aid:a.id,snap,label:`${kid.name}: ${lab}.`};T.sheet=null;save();render()},
+  approveQuick:d=>{const [sid,iid]=d.k.split("|"),a=S.adventures.find(x=>x.id===T.aid),c=S.classes.find(x=>x.id===T.cls),kid=c&&c.students.find(s=>s.id===sid),isl=a&&a.islands.find(x=>x.id===iid);
+    const snap=JSON.stringify(S.progress[sid]?.[T.aid]??null),p=IP(sid,T.aid,iid);p.pending=false;p.done=true;p.okAt=Date.now();
+    T.undo={sid,aid:T.aid,snap,label:`${kid?kid.name:""}: Heft ok (${isl?isl.name:""}).`};save();render()},
+  undo:()=>{const u=T.undo;if(!u)return;const v=JSON.parse(u.snap);S.progress[u.sid]=S.progress[u.sid]||{};if(v===null)delete S.progress[u.sid][u.aid];else S.progress[u.sid][u.aid]=v;T.undo=null;save();render();toast("Rückgängig gemacht.")},
+  undoClose:()=>{T.undo=null;render()},
   resetIsl:(d,b)=>{if(!confirmInline(b,"zurück?"))return;const {p}=findP(d.k);Object.assign(p,{done:false,pending:false,tries:0,locked:false});save();render()},
   resetKid:(d,b)=>{if(!confirmInline(b,"alles zurück?"))return;if(S.progress[d.k])delete S.progress[d.k][T.aid];save();render()},
   approve:d=>{const {p}=findP(d.k);p.pending=false;p.done=true;save();render()},
   reject:d=>{const {p}=findP(d.k);p.pending=false;p.done=false;save();render()},
-  reset:d=>{const {p}=findP(d.k);p.tries=0;p.locked=false;save();render()},
+  reset:(d,b)=>{if(!confirmInline(b,"zurücksetzen?"))return;const {p}=findP(d.k);p.tries=0;p.locked=false;save();render()},
   tick:(d,b)=>{if(!confirmInline(b,"abhaken?"))return;const {p}=findP(d.k);p.done=true;p.at=Date.now();save();render()},
   unchoose:(d,b)=>{if(!confirmInline(b,"Weg löschen?"))return;const [sid,k]=d.k.split("|");setChoice(sid,T.aid,+k||1,null);save();render()},
   toBeamer:()=>{T.unlocked=false;go({s:"beamer",cls:T.cls,aid:T.aid})},
@@ -1135,7 +1271,7 @@ async function exportCsv(){
   const q=v=>`"${String(v).replace(/"/g,'""')}"`;
   const lines=[["Name",...cols.map(i=>(ST.length>1?`E${stageOf(i)} `:"")+i.name),...forks.map(s=>ST.length>1?`Weg Etappe ${s.k}`:"Weg"),"Sterne"].map(q).join(";")];
   [...c.students].sort((x,y)=>x.name.localeCompare(y.name,"de")).forEach(k=>{
-    lines.push([k.name,...cols.map(i=>{const p=peek(k.id,a.id,i.id);return p?.done?"geschafft":p?.pending?"Kontrolle offen":p?.locked?"gesperrt":p?.tries?p.tries+" Fehlversuche":""}),
+    lines.push([k.name,...cols.map(i=>{const p=peek(k.id,a.id,i.id);return p?.done?("geschafft"+(p.at?" "+fmtTimeLong(p.at):"")):p?.pending?("Kontrolle offen"+(p.at?" "+fmtTimeLong(p.at):"")):p?.locked?("gesperrt"+wrongNote(p)):p?.tries?(p.tries+" Fehlversuche"+wrongNote(p)):""}),
       ...forks.map(s=>{const ch=choiceOf(k.id,a.id,s.k);return ch?(ch===1?a.b1:a.b2):""}),kidStars(a,k.id)].map(q).join(";"))});
   await saveFile(`Kapitaens-Karte_${c.name}_${a.name}.csv`.replace(/[\\/:*?"<>|]/g,"-"),"﻿"+lines.join("\r\n"),getEl("em"));
 }
@@ -1165,7 +1301,7 @@ if("serviceWorker" in navigator){
   navigator.serviceWorker.addEventListener("controllerchange",()=>{if(hadController)window.__updateReady=true});
   window.addEventListener("load",()=>{navigator.serviceWorker.register("sw.js",{updateViaCache:"none"}).then(reg=>{
     document.addEventListener("visibilitychange",()=>{if(!document.hidden)reg.update().catch(()=>{})})}).catch(()=>{})})}
-window.APP_VERSION="20261117-2022";
+window.APP_VERSION="20261118-1628";
 </script>
 </body>
 </html>
