@@ -358,7 +358,7 @@ function parseImport(txt){txt=cleanImport(txt);
     const m=line.match(/^([A-Za-zÄÖÜäöüß\-]+(?:\s\d)?)\s*:\s*(.*)$/);
     if(!m){out.errors.push(`Zeile ${n+1} verstehe ich nicht: „${cut(line,40)}“`);return}
     const k=m[1].toLowerCase(),v=m[2].trim();
-    if(k==="abenteuer"){out.name=v;return} if(k==="ziel"||k==="belohnung"){out.goalText=v;return}
+    if(k==="abenteuer"){out.name=v;return} if(k==="form"||k==="karte"||k==="kartenform"){if(/kreis/i.test(v))out.layout="circle";return} if(k==="hauptinsel"&&!cur){out.hubName=v;return} if(k==="ziel"||k==="belohnung"){out.goalText=v;return}
     if(k==="weg 1"&&!cur){out.b1=v;return} if(k==="weg 2"&&!cur){out.b2=v;return}
     if(!cur&&k!=="insel"&&!k.startsWith("etappe")&&out.islands.length&&stg){out.errors.push(`Zeile ${n+1}: „${m[1]}“ steht zwischen ETAPPE und der ersten INSEL-Zeile.`);return}
     if(k.startsWith("etappe")){stg++;out.stageNames[stg-1]=v;cur=null;return}
@@ -456,6 +456,7 @@ function forkOpen(a,sid,k){k=k||1;const st=stagesOf(a)[k-1];return !!st&&stageOp
 function status(a,sid,isl){
   const p=peek(sid,a.id,isl.id)||{};
   if(p.done)return"done"; if(p.pending)return"pending";
+  if(isCircle(a))return p.locked?"locked":"open";
   const k=stageOf(isl),st=stagesOf(a)[k-1],ch=choiceOf(sid,a.id,k);let s="open";
   const seqOk=list=>{const j=list.indexOf(isl);return j<=0||passed(sid,a.id,list[j-1].id)};
   if(!stageOpen(a,sid,k))s="fog";
@@ -468,7 +469,7 @@ function status(a,sid,isl){
   return s;
 }
 function goalReached(a,sid){return stagesOf(a).every(st=>stageComplete(a,sid,st,i=>isDone(sid,a.id,i.id)))}
-function kidTarget(a,sid){if(goalReached(a,sid))return"ziel";let last="start";
+function kidTarget(a,sid){if(isCircle(a))return"hub";if(goalReached(a,sid))return"ziel";let last="start";
   for(const st of stagesOf(a)){if(!stageOpen(a,sid,st.k))return last;
     const r=st.R.find(i=>!passed(sid,a.id,i.id));if(r)return r.id;if(st.R.length)last=st.R[st.R.length-1].id;
     if(st.fork){const c=choiceOf(sid,a.id,st.k);if(!c)return"fork_"+st.k;const l=(c===1?st.L1:st.L2).find(i=>!passed(sid,a.id,i.id));if(l)return l.id;last="join_"+st.k}}
@@ -506,7 +507,51 @@ function compass(x,y,r){return `<g transform="translate(${x},${y})" opacity=".55
   <path d="M0,${-r} L${r*.16},0 L0,${r} L${-r*.16},0Z" fill="#7A6247"/><path d="M${-r},0 L0,${r*.16} L${r},0 L0,${-r*.16}Z" fill="#B9A27C"/>
   <text y="${-r-6}" text-anchor="middle" class="lbl sm" style="stroke-width:3px">N</text></g>`}
 
+/* ================= Kreis-Karte ================= */
+const isCircle=a=>a&&a.layout==="circle";
+function islandSvg(i,p,rr,status_,kid,above){
+    const seed=hash(i.id);
+    const tapA=kid?` class="tap${status_==="closed"?" closed":""}" data-act="isl" data-id="${i.id}" role="button" tabindex="0" aria-label="${esc(i.name)}"`:status_==="closed"?` class="closed"`:"";
+    let g=`<g${tapA}><circle cx="${p.x}" cy="${p.y}" r="${rr*1.45}" fill="transparent"/>
+      <path d="${blob(p.x,p.y,rr*1.32,seed+7)}" fill="#C6E0D8" opacity=".55"/><path d="${blob(p.x,p.y,rr*1.32,seed+7)}" fill="url(#hatch)"/>
+      <path class="sand" d="${blob(p.x,p.y,rr,seed)}" fill="#E2C07F" stroke="#9C7438" stroke-width="2"/>
+      <path d="${blob(p.x-rr*.08,p.y-rr*.05,rr*.6,seed+3,7)}" fill="#8DAA5E" stroke="#6E8B44" stroke-width="1.5"/>`;
+    if(status_==="open")g+=`<circle class="pulse" cx="${p.x}" cy="${p.y}" r="${rr*1.18}" fill="none" stroke="#C2923A" stroke-width="4" stroke-dasharray="8 7"/>`;
+    if(status_==="done")g+=`<line x1="${p.x+2}" y1="${p.y+rr*.15}" x2="${p.x+2}" y2="${p.y-rr*.95}" stroke="#40260F" stroke-width="3"/><path d="M${p.x+3},${p.y-rr*.95} L${p.x+rr*.75},${p.y-rr*.72} L${p.x+3},${p.y-rr*.48}Z" fill="#B1372B" stroke="#7A1E15" stroke-width="1.5"/><circle cx="${p.x+rr*.3}" cy="${p.y-rr*.72}" r="${rr*.08}" fill="#FBF5E4"/>`;
+    if(status_==="locked")g+=`<g transform="translate(${p.x},${p.y})"><path d="M${-rr*.22},${-rr*.05} v${-rr*.18} a${rr*.22},${rr*.22} 0 0 1 ${rr*.44},0 v${rr*.18}" fill="none" stroke="#40260F" stroke-width="4"/><rect x="${-rr*.34}" y="${-rr*.06}" width="${rr*.68}" height="${rr*.5}" rx="4" fill="#C2923A" stroke="#40260F" stroke-width="2.5"/></g>`;
+    if(status_==="pending")g+=`<g transform="translate(${p.x},${p.y})"><circle r="${rr*.42}" fill="#FBF5E4" stroke="#C2923A" stroke-width="3"/><path d="M${-rr*.18},${-rr*.24} h${rr*.36} l${-rr*.36},${rr*.48} h${rr*.36}z" fill="#C2923A" stroke="#40260F" stroke-width="2"/></g>`;
+    if(status_==="fog")g+=`<g filter="url(#fogb)" opacity=".93"><circle cx="${p.x-rr*.45}" cy="${p.y+rr*.1}" r="${rr*.75}" fill="#FBF5E4"/><circle cx="${p.x+rr*.4}" cy="${p.y-rr*.15}" r="${rr*.8}" fill="#FBF5E4"/><circle cx="${p.x}" cy="${p.y+rr*.35}" r="${rr*.7}" fill="#FBF5E4"/></g>`;
+    const muted=status_==="fog"?" muted":"";
+    const nm=esc(cut(i.name,p.sp?16:20)),sx="★".repeat(+i.stars||0);
+    if(above)g+=`<text x="${p.x}" y="${p.y-rr-30}" text-anchor="middle" class="stx${status_==="done"||!kid?"":" off"}">${sx}</text><text x="${p.x}" y="${p.y-rr-12}" text-anchor="middle" class="lbl${p.sp?" sm":""}${muted}">${nm}</text>`;
+    else g+=`<text x="${p.x}" y="${p.y+rr+24}" text-anchor="middle" class="lbl${p.sp?" sm":""}${muted}">${nm}</text><text x="${p.x}" y="${p.y+rr+42}" text-anchor="middle" class="stx${status_==="done"||!kid?"":" off"}">${sx}</text>`;
+    return g+`<title>${esc(i.name)}</title></g>`}
+function circleMap(a,ctx){
+  const W=1000,H=600,cx=500,cy=300,L=a.islands,n=Math.max(1,L.length);
+  const r=n>12?28:n>9?34:40,rx=395,ry=188,kid=ctx.mode==="kid",sid=ctx.sid,P={};
+  L.forEach((i,k)=>{const ang=-Math.PI/2+k*2*Math.PI/n;P[i.id]={x:cx+rx*Math.cos(ang),y:cy+ry*Math.sin(ang)}});
+  let out=`<svg viewBox="0 0 ${W} ${H}" style="width:100%" data-w="${W}" data-fx="0" role="img" aria-label="Schatzkarte ${esc(a.name)}">
+  <defs><filter id="fogb" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5"/></filter>
+  <pattern id="hatch" width="14" height="14" patternUnits="userSpaceOnUse"><path d="M0 14 L14 0" stroke="#3D7F8C" stroke-width="1" opacity=".18"/></pattern></defs>
+  <rect x="10" y="10" width="${W-20}" height="${H-20}" rx="10" fill="none" stroke="#B9A27C" stroke-width="2"/>
+  <rect x="18" y="18" width="${W-36}" height="${H-36}" rx="6" fill="none" stroke="#D9C291" stroke-width="1"/>
+  ${compass(70,H-70,34)}`;
+  const wv=rng(hash(a.id));for(let k=0;k<9;k++){const x=40+wv()*920,y=40+wv()*520;out+=`<path d="M${x.toFixed(0)},${y.toFixed(0)} q8,-6 16,0 t16,0" fill="none" stroke="#3D7F8C" stroke-width="2" opacity=".22"/>`}
+  L.forEach(i=>{const p=P[i.id];const d=kid&&isDone(sid,a.id,i.id);out+=`<path class="route" ${d?'style="opacity:.35"':""} d="M${cx},${cy} L${p.x.toFixed(1)},${p.y.toFixed(1)}"/>`});
+  const rh=r*2.1,all=kid&&L.length&&L.every(i=>isDone(sid,a.id,i.id));
+  out+=`<g><path d="${blob(cx,cy,rh*1.25,hash(a.id+"h")+7)}" fill="#C6E0D8" opacity=".6"/><path d="${blob(cx,cy,rh,hash(a.id+"h"))}" fill="#E2C07F" stroke="#9C7438" stroke-width="2.5"/>
+    <path d="${blob(cx-rh*.1,cy-rh*.08,rh*.62,hash(a.id+"h")+3,8)}" fill="#8DAA5E" stroke="#6E8B44" stroke-width="1.5"/>
+    <rect x="${cx-rh*.5}" y="${cy+rh*.25}" width="${rh*.55}" height="8" fill="#6E4426"/>
+    ${all?`<line x1="${cx+rh*.3}" y1="${cy+rh*.1}" x2="${cx+rh*.3}" y2="${cy-rh*.95}" stroke="#40260F" stroke-width="3.5"/><path d="M${cx+rh*.3},${cy-rh*.95} L${cx+rh*.95},${cy-rh*.72} L${cx+rh*.3},${cy-rh*.5}Z" fill="#C2923A" stroke="#7A5A1E" stroke-width="1.5"/>`:""}
+    <text x="${cx}" y="${cy+rh+30}" text-anchor="middle" class="lbl" style="font-family:var(--display);font-weight:400;font-size:26px">${esc(cut(a.hubName||a.name,26))}</text></g>`;
+  L.forEach(i=>{const p=P[i.id];out+=islandSvg(i,p,r,kid?status(a,sid,i):"neutral",kid,p.y<cy-1)});
+  if(kid){const sc=Math.max(.6,r/46),to={x:cx-rh-30,y:cy+rh*.4};let from=to;
+    if(ctx.from&&P[ctx.from]){const fp=P[ctx.from];from={x:fp.x+r*.3,y:fp.y+r+14}}
+    out+=`<g id="kship" data-via="" data-tx="${to.x.toFixed(1)}" data-ty="${to.y.toFixed(1)}" style="transform:translate(${from.x.toFixed(1)}px,${from.y.toFixed(1)}px)">${shipSvg(0,0,sc)}</g>`}
+  return out+"</svg>";
+}
 function mapSvg(a,ctx){
+  if(isCircle(a))return circleMap(a,ctx);
   const ST=stagesOf(a),H=600,mx=80,mid=292,multi=ST.length>1;
   const col={start:0},span=[],mainSeq=["start"];let c=0,prevEnd="start";
   ST.forEach((st,ix)=>{st.startKey=prevEnd;const c0=c+1;
@@ -567,24 +612,7 @@ function mapSvg(a,ctx){
     <rect x="${P.start.x-4}" y="${P.start.y-r*.2}" width="${r*.9}" height="7" fill="#6E4426"/>
     <text x="${P.start.x}" y="${P.start.y+r+26}" text-anchor="middle" class="lbl">Hafen</text></g>`;
   // Inseln
-  const islandG=(i)=>{
-    const p=P[i.id];if(!p)return"";const rr=p.sp?rs:r,status_=stat(i),seed=hash(i.id);
-    const above=p.y<mid-1||(p.sp&&p.y<mid);
-    const tapA=kid?` class="tap${status_==="closed"?" closed":""}" data-act="isl" data-id="${i.id}" role="button" tabindex="0" aria-label="${esc(i.name)}"`:status_==="closed"?` class="closed"`:"";
-    let g=`<g${tapA}><circle cx="${p.x}" cy="${p.y}" r="${rr*1.45}" fill="transparent"/>
-      <path d="${blob(p.x,p.y,rr*1.32,seed+7)}" fill="#C6E0D8" opacity=".55"/><path d="${blob(p.x,p.y,rr*1.32,seed+7)}" fill="url(#hatch)"/>
-      <path class="sand" d="${blob(p.x,p.y,rr,seed)}" fill="#E2C07F" stroke="#9C7438" stroke-width="2"/>
-      <path d="${blob(p.x-rr*.08,p.y-rr*.05,rr*.6,seed+3,7)}" fill="#8DAA5E" stroke="#6E8B44" stroke-width="1.5"/>`;
-    if(status_==="open")g+=`<circle class="pulse" cx="${p.x}" cy="${p.y}" r="${rr*1.18}" fill="none" stroke="#C2923A" stroke-width="4" stroke-dasharray="8 7"/>`;
-    if(status_==="done")g+=`<line x1="${p.x+2}" y1="${p.y+rr*.15}" x2="${p.x+2}" y2="${p.y-rr*.95}" stroke="#40260F" stroke-width="3"/><path d="M${p.x+3},${p.y-rr*.95} L${p.x+rr*.75},${p.y-rr*.72} L${p.x+3},${p.y-rr*.48}Z" fill="#B1372B" stroke="#7A1E15" stroke-width="1.5"/><circle cx="${p.x+rr*.3}" cy="${p.y-rr*.72}" r="${rr*.08}" fill="#FBF5E4"/>`;
-    if(status_==="locked")g+=`<g transform="translate(${p.x},${p.y})"><path d="M${-rr*.22},${-rr*.05} v${-rr*.18} a${rr*.22},${rr*.22} 0 0 1 ${rr*.44},0 v${rr*.18}" fill="none" stroke="#40260F" stroke-width="4"/><rect x="${-rr*.34}" y="${-rr*.06}" width="${rr*.68}" height="${rr*.5}" rx="4" fill="#C2923A" stroke="#40260F" stroke-width="2.5"/></g>`;
-    if(status_==="pending")g+=`<g transform="translate(${p.x},${p.y})"><circle r="${rr*.42}" fill="#FBF5E4" stroke="#C2923A" stroke-width="3"/><path d="M${-rr*.18},${-rr*.24} h${rr*.36} l${-rr*.36},${rr*.48} h${rr*.36}z" fill="#C2923A" stroke="#40260F" stroke-width="2"/></g>`;
-    if(status_==="fog")g+=`<g filter="url(#fogb)" opacity=".93"><circle cx="${p.x-rr*.45}" cy="${p.y+rr*.1}" r="${rr*.75}" fill="#FBF5E4"/><circle cx="${p.x+rr*.4}" cy="${p.y-rr*.15}" r="${rr*.8}" fill="#FBF5E4"/><circle cx="${p.x}" cy="${p.y+rr*.35}" r="${rr*.7}" fill="#FBF5E4"/></g>`;
-    const muted=status_==="fog"?" muted":"";
-    const nm=esc(cut(i.name,p.sp?16:20)),sx="★".repeat(+i.stars||0);
-    if(above)g+=`<text x="${p.x}" y="${p.y-rr-30}" text-anchor="middle" class="stx${status_==="done"||!kid?"":" off"}">${sx}</text><text x="${p.x}" y="${p.y-rr-12}" text-anchor="middle" class="lbl${p.sp?" sm":""}${muted}">${nm}</text>`;
-    else g+=`<text x="${p.x}" y="${p.y+rr+24}" text-anchor="middle" class="lbl${p.sp?" sm":""}${muted}">${nm}</text><text x="${p.x}" y="${p.y+rr+42}" text-anchor="middle" class="stx${status_==="done"||!kid?"":" off"}">${sx}</text>`;
-    return g+`<title>${esc(i.name)}</title></g>`};
+  const islandG=(i)=>{const p=P[i.id];if(!p)return"";return islandSvg(i,p,p.sp?rs:r,stat(i),kid,p.y<mid-1||(p.sp&&p.y<mid))};
   a.islands.forEach(i=>out+=islandG(i));
   // Weggabelungen
   ST.forEach(st=>{if(!st.fork)return;const p=P["fork_"+st.k],ch=kid?choiceOf(sid,a.id,st.k):null,canChoose=kid&&!ch&&forkOpen(a,sid,st.k);
@@ -685,7 +713,7 @@ function render(){
   if(V.s==="map"){
     app.innerHTML=`<div class="bar"><button class="back" data-act="toNames">← Das bin ich nicht</button><span class="sp"></span>
       <span class="chip"><svg viewBox="0 0 24 24" aria-hidden="true">${STAR}</svg>${kidStars(a,k.id)} von ${maxStars(a)}</span></div>
-      <h2>Ahoi, ${esc(k.name)}!</h2><p class="sub">${esc(a.name)} · Wohin segelst du? Tippe auf deine Insel.</p>
+      <h2>Ahoi, ${esc(k.name)}!</h2><p class="sub">${esc(a.name)} · ${isCircle(a)?"Alle Inseln sind offen. Welche hast du gelöst?":"Wohin segelst du? Tippe auf deine Insel."}</p>
       <div class="map">${mapSvg(a,{mode:"kid",sid:k.id})}</div>${treasure(a,c,false)}`;
     idle(60000);return}
   if(V.s==="fork")return forkScreen(a,k);
@@ -770,10 +798,11 @@ function winScreen(a,k,isl,pend){
       ${chest?`<div class="stage">${CHEST}<div class="burst">${coins}${multi?coins.replace(/--d:(\d+)ms/g,(m,x)=>`--d:${+x+600}ms`):""}</div></div>`:""}
       ${multi?`<div class="ribbon" role="status"><span>${fahrt}</span></div><p class="note" style="font-size:18px;margin:6px 0 0">${nv===2?"Zwei":nv===3?"Drei":nv} Inseln in einer Fahrt!</p>`:""}
       <p class="h"${pend&&!tch?' style="font-size:46px;overflow-wrap:anywhere"':""}>${pend?(tch?"Super!":"Kapitänskontrolle!"):"Sehr gut!"}</p>
-      <p class="n">${pend?`Zeig ${tch?"deine Arbeit":"dein Heft"} ${esc(S.teacher)}.<br><span style="font-size:21px">Danach werden deine Sterne golden und du kannst weitersegeln. Rechnen kannst du schon weiter.</span>`:reached?"Du hast das Ziel erreicht!":"Du kannst weitersegeln!"}</p>
+      <p class="n">${isCircle(a)&&!pend?(reached?"Alle Inseln geschafft!":"Zurück zur Hauptinsel!"):pend?`Zeig ${tch?"deine Arbeit":"dein Heft"} ${esc(S.teacher)}.<br><span style="font-size:21px">Danach werden deine Sterne golden und du kannst weitersegeln. Rechnen kannst du schon weiter.</span>`:reached?"Du hast das Ziel erreicht!":"Du kannst weitersegeln!"}</p>
       <div class="stars">${Array.from({length:+isl.stars||0},(_,i)=>starSvg(!!pend,(chest?700:200)+i*250)).join("")}</div>
       <p class="n" style="margin-top:16px;font-size:20px">${esc(k.name)} · ${esc(isl.name)} · Sterne: ${kidStars(a,k.id)} von ${maxStars(a)}${pend?` <span style="white-space:nowrap">(+${+isl.stars||0} nach der Kontrolle)</span>`:""}</p>
-      ${(()=>{if(pend)return `<div class="btnrow"><button class="check" data-act="toNames">Okay</button></div>`;const n=nextStep(a,k.id);
+      ${(()=>{if(pend)return `<div class="btnrow"><button class="check" data-act="toNames">Okay</button></div>`;
+        if(isCircle(a))return `<div class="btnrow"><button class="check" data-act="toMap">Noch eine Insel?</button><button class="check alt" data-act="toNames">Fertig</button></div>`;const n=nextStep(a,k.id);
         if(n&&n.kind==="isl")return `<div class="btnrow"><button class="check" data-act="nextCode">${hasCode(n.isl)?"Noch einen Code?":"Zur nächsten Insel"}</button><button class="check alt" data-act="toNames">Fertig</button></div><p class="note" style="margin-top:10px;font-size:16px">Nächste Insel: ${esc(n.isl.name)} · <button class="back" style="padding:4px 10px;font-size:15px" data-act="toMap">Karte ansehen</button></p>`;
         if(n&&n.kind==="fork")return `<div class="btnrow"><button class="check" data-act="nextCode">Weg wählen</button><button class="check alt" data-act="toNames">Fertig</button></div>`;
         return `<div class="btnrow"><button class="check alt" data-act="toMap">Weitersegeln</button><button class="check" data-act="toNames">Fertig</button></div>`})()}</div>
@@ -813,13 +842,13 @@ function tapIsland(id){
 }
 
 /* ================= Direkt zum Zahlenschloss ================= */
-function nextStep(a,sid){const tk=kidTarget(a,sid);
+function nextStep(a,sid){if(isCircle(a))return null;const tk=kidTarget(a,sid);
   if(tk.startsWith("fork_"))return{kind:"fork",stage:+tk.slice(5)};
   const isl=a.islands.find(i=>i.id===tk);
   if(isl){const st=status(a,sid,isl);if(st==="open"||st==="locked")return{kind:"isl",isl}}
   return null}
 function goNext(a,sid){const n=a.direct!==false?nextStep(a,sid):null;const base={cls:V.cls,aid:V.aid,sid,visit:V.visit||0};
-  if(!n&&a.islands.some(x=>peek(sid,a.id,x.id)?.pending)){go({...base,s:"map"});return toast(`Zeig erst dein Heft ${S.teacher}. Danach geht es weiter.`)}
+  if(!n&&!isCircle(a)&&a.islands.some(x=>peek(sid,a.id,x.id)?.pending)){go({...base,s:"map"});return toast(`Zeig erst dein Heft ${S.teacher}. Danach geht es weiter.`)}
   if(n&&n.kind==="isl")return go({...base,s:"isl",iid:n.isl.id,val:"",res:null,tips:null,step:0,marks:null});
   if(n&&n.kind==="fork")return go({...base,s:"fork",pick:0,stage:n.stage});
   go({...base,s:"map"})}
@@ -897,7 +926,7 @@ function tOverview(){
   const st=[...c.students].sort((x,y)=>x.name.localeCompare(y.name,"de"));
   const cols=[];ST.forEach(s=>{s.R.forEach(i=>cols.push({i}));if(s.fork)cols.push({way:s.k});[...s.L1,...s.L2,...s.SP].forEach(i=>cols.push({i}))});
   const pend=st.filter(k=>a.islands.some(i=>peek(k.id,a.id,i.id)?.pending)).length;
-  const grp=(n,t)=>n?`<th class="grp" colspan="${n}">${esc(t)}</th>`:"";
+  const grp=(n,t)=>n?`<th class="grp" colspan="${n}">${esc(isCircle(a)&&t==="Grundlagen"?"Inseln im Kreis":t)}</th>`:"";
   const cell=(sid,i)=>{const p=peek(sid,a.id,i.id)||{},k=`${sid}|${i.id}`;
     const when=p.at?`<span class="note" style="display:block;font-size:12px;line-height:1.1">${fmtTime(p.at)}</span>`:"";
     const wt=wrongTimes(p),wlast=wt.length?wt[wt.length-1]:0,wtitle=wt.length?` title="Falsche Versuche: ${wt.map(fmtTime).join(", ")}"`:"";
@@ -986,7 +1015,8 @@ function importPanel(mode){
   let out="";
   if(r){const p=r.parsed;
     out=`<div class="imp">${p.name&&mode==="new"?`<p><b>Abenteuer:</b> ${esc(p.name)}${p.goalText?` · Ziel: ${esc(p.goalText)}`:""}</p>`:""}
-      ${p.stageNames.length>1?`<p><b>${p.stageNames.length} Etappen erkannt:</b> ${p.stageNames.map((n,i)=>esc(n||"Etappe "+(i+1))).join(" · ")}. Jede weitere Etappe öffnet sich erst, wenn du sie in der Übersicht freigibst.</p>`:""}
+      ${p.layout==="circle"?`<p><b>Kartenform: Kreis.</b> Alle Inseln liegen rund um die Hauptinsel und sind frei wählbar.</p>`:""}
+      ${p.layout!=="circle"&&p.stageNames.length>1?`<p><b>${p.stageNames.length} Etappen erkannt:</b> ${p.stageNames.map((n,i)=>esc(n||"Etappe "+(i+1))).join(" · ")}. Jede weitere Etappe öffnet sich erst, wenn du sie in der Übersicht freigibst.</p>`:""}
       ${p.islands.length?`<p><b>${p.islands.length} ${p.islands.length===1?"Insel":"Inseln"} erkannt:</b></p><ul>${p.islands.map(i=>{const w=trapWarnings(i);
         return `<li>${p.stageNames.length>1?`E${i.stage} · `:""}${esc(i.name)} · ${i.type==="code"?`Code ${esc(codeText(i)||"?")}`:i.type==="mixed"?`Code ${esc(codeText(i)||"?")} + Vergleich ${esc(i.cmpText||"")}`:i.type==="compare"?"Vergleich":"Lehrkraft"} · ${i.stars} ★${i.traps.length?` · ${i.traps.length} ${i.traps.length===1?"Falle":"Fallen"}`:""}${i.sec!=="route"?` · ${({wp1:"Wahlpflicht 1",wp2:"Wahlpflicht 2",sprint:"Sprinter"})[i.sec]}`:""}${w.length?` <span class="bad">(${w.map(esc).join(", ")})</span>`:""}</li>`}).join("")}</ul>`:`<p class="bad">Keine INSEL-Zeile gefunden.</p>`}
       ${p.errors.length?`<ul class="bad">${p.errors.map(e=>`<li>${esc(e)}</li>`).join("")}</ul>`:""}
@@ -1059,12 +1089,16 @@ function tEdit(){
 </div>
     <p class="note">Die Kinder fahren immer vorwärts: Es ist nur die nächste Insel offen. Die Weggabelung kommt nach allen Grundlagen, Sprinter nach ihrer Abzweigung.</p>
     <h4>Klassen</h4><div class="row" style="gap:18px">${S.classes.length?S.classes.map(c=>`<label class="cb"><input type="checkbox" data-acl="${c.id}" ${a.classIds.includes(c.id)?"checked":""}> ${esc(c.name)}</label>`).join(""):'<span class="note">Lege zuerst unter „Klassen“ eine Klasse an.</span>'}</div></div>
-  <div class="panel"><h3>Inseln</h3>
+  <div class="panel"><h3>Kartenform</h3>
+    <div class="row"><select data-af="layout" aria-label="Kartenform"><option value="route" ${!isCircle(a)?"selected":""}>Route mit Etappen, Gabelungen und Sprintern</option><option value="circle" ${isCircle(a)?"selected":""}>Kreis: Inseln rund um eine Hauptinsel, frei wählbar</option></select>
+    ${isCircle(a)?`<label class="note" style="display:flex;gap:6px;align-items:center">Name der Hauptinsel <input type="text" data-af="hubName" value="${esc(a.hubName||"")}" placeholder="${esc(a.name)}"></label>`:""}</div>
+    <p class="note">${isCircle(a)?"Alle Inseln sind von Anfang an offen. Die Kinder wählen jedes Mal auf der Karte, wohin sie fahren, und segeln danach zurück zur Hauptinsel. Alles ist freiwillig.":"Die Kinder fahren eine Insel nach der anderen."}</p></div>
+  ${isCircle(a)?`<div class="panel"><h3>Inseln im Kreis</h3>${sec(ST[0],"route","Inseln","In dieser Reihenfolge liegen sie im Uhrzeigersinn um die Hauptinsel, oben beginnend.")}</div>`:`<div class="panel"><h3>Inseln</h3>
     <div class="fields"><label>Name Wahlpflicht-Weg 1<input type="text" data-af="b1" value="${esc(a.b1||"")}"></label><label>Name Wahlpflicht-Weg 2<input type="text" data-af="b2" value="${esc(a.b2||"")}"></label></div>
     ${ST.map(stageBox).join("")}
     <div class="row" style="margin-top:14px"><button class="btn" data-act="addStage">+ Etappe hinzufügen</button>
       <span class="note">Etappen sind Abschnitte nacheinander, jede mit eigenen Grundlagen, Gabelung und Sprintern. Eine Etappe geht erst auf, wenn die vorige geschafft ist.</span></div>
-    <p class="note" style="margin-top:12px"><b>Code-Insel:</b> Kinder tippen den Code von der Schatzkarte. <b>Vergleichs-Insel:</b> Kinder vergleichen an der Lösungsstation und bestätigen am iPad „verglichen“. <b>Gemischt:</b> erst Frage nach der Lösungsstation, dann Code für den Rest. <b>Lehrkraft-Insel:</b> Nur du hakst ab. Alle Codes und Fotos auf einen Blick findest du unter „Lösungen“.</p></div>
+    <p class="note" style="margin-top:12px"><b>Code-Insel:</b> Kinder tippen den Code von der Schatzkarte. <b>Vergleichs-Insel:</b> Kinder vergleichen an der Lösungsstation und bestätigen am iPad „verglichen“. <b>Gemischt:</b> erst Frage nach der Lösungsstation, dann Code für den Rest. <b>Lehrkraft-Insel:</b> Nur du hakst ab. Alle Codes und Fotos auf einen Blick findest du unter „Lösungen“.</p></div>`}
   ${importPanel("add")}
   <div class="panel"><h3>So sieht die Karte aus</h3><div class="map" id="preview">${mapSvg(a,{mode:"preview"})}</div></div>`;
 }
@@ -1146,7 +1180,8 @@ app.addEventListener("change",async e=>{
   if(t.dataset.kcr&&V.s==="teacher"){const [cid,sid]=t.dataset.kcr.split("|");const k=S.classes.find(x=>x.id===cid)?.students.find(s=>s.id===sid);if(k){k.checkRate=t.value===""?null:+t.value;save();toast("Gespeichert.")}return}
   const a=S.adventures.find(x=>x.id===T.edit);if(!a||V.s!=="teacher")return;
   if(t.dataset.af){const f=t.dataset.af;a[f]=t.type==="checkbox"?t.checked:f==="goalPerKid"?(parseInt(t.value,10)||0):t.value.trim();save();
-    if(f==="b1"||f==="b2"||f==="goal"||f==="codeCheck")return render();refreshPreview(a);return}
+    if(f==="layout"&&a.layout==="circle"){a.islands.forEach(i=>{i.sec="route";i.stage=1});a.stageNames=[];save();toast("Alle Inseln liegen jetzt im Kreis.")}
+    if(f==="b1"||f==="b2"||f==="goal"||f==="codeCheck"||f==="layout")return render();refreshPreview(a);return}
   if(t.dataset.sn){const k=+t.dataset.sn;a.stageNames=a.stageNames||[];while(a.stageNames.length<k)a.stageNames.push("");a.stageNames[k-1]=t.value.trim();save();refreshPreview(a);return}
   if(t.dataset.acl){const id=t.dataset.acl;a.classIds=t.checked?[...new Set([...a.classIds,id])]:a.classIds.filter(x=>x!==id);save();refreshPreview(a);return}
   if(t.dataset.if){const i=a.islands.find(x=>x.id===t.dataset.id);if(!i)return;const f=t.dataset.if;
@@ -1170,7 +1205,7 @@ const TACT={
   delPh:(d,b)=>{if(!confirmInline(b,"?"))return;const isl=S.adventures.flatMap(a=>a.islands).find(i=>i.id===d.isl);if(isl)isl.photos=isl.photos.filter(x=>x!==d.id);save();gcPhotos();render()},
   impCheck:d=>{const text=cleanImport(getEl("imp-"+d.mode).value);T.imp={mode:d.mode,text,parsed:parseImport(text)};render()},
   impGo:()=>{const r=T.imp;if(!r)return;const p=r.parsed;let a;
-    if(r.mode==="new"){a={id:uid(),name:p.name||"Importiertes Abenteuer",classIds:T.cls?[T.cls]:[],active:true,seq:false,forkAfterBase:true,b1:p.b1||"Wahlpflicht 1",b2:p.b2||"Wahlpflicht 2",goalPerKid:0,goalText:p.goalText||"",islands:[],stageNames:p.stageNames.slice(),gate:p.stageNames.length>1};S.adventures.unshift(a)}
+    if(r.mode==="new"){a={id:uid(),name:p.name||"Importiertes Abenteuer",classIds:T.cls?[T.cls]:[],active:true,seq:false,forkAfterBase:true,b1:p.b1||"Wahlpflicht 1",b2:p.b2||"Wahlpflicht 2",goalPerKid:0,goalText:p.goalText||"",islands:[],stageNames:p.layout==="circle"?[]:p.stageNames.slice(),gate:p.layout!=="circle"&&p.stageNames.length>1,layout:p.layout||"route",hubName:p.hubName||""};if(p.layout==="circle")p.islands.forEach(i=>{i.sec="route";i.stage=1});S.adventures.unshift(a)}
     else{a=S.adventures.find(x=>x.id===T.edit);if(!a)return;a.stageNames=a.stageNames||[];p.stageNames.forEach((n,i)=>{if(n&&!a.stageNames[i])a.stageNames[i]=n});if(p.b1)a.b1=p.b1;if(p.b2)a.b2=p.b2;if(p.goalText&&!a.goalText)a.goalText=p.goalText}
     a.islands.push(...p.islands);
     p.islands.forEach(i=>{if(i._after){const t=a.islands.find(x=>x.sec==="route"&&stageOf(x)===stageOf(i)&&x.name.toLowerCase()===i._after.toLowerCase())||a.islands.find(x=>x.sec==="route"&&x.name.toLowerCase()===i._after.toLowerCase());i.after=t?t.id:""}delete i._after});
@@ -1308,7 +1343,7 @@ if("serviceWorker" in navigator){
   navigator.serviceWorker.addEventListener("controllerchange",()=>{if(hadController)window.__updateReady=true});
   window.addEventListener("load",()=>{navigator.serviceWorker.register("sw.js",{updateViaCache:"none"}).then(reg=>{
     document.addEventListener("visibilitychange",()=>{if(!document.hidden)reg.update().catch(()=>{})})}).catch(()=>{})})}
-window.APP_VERSION="20261118-1756";
+window.APP_VERSION="20261123-0731";
 </script>
 </body>
 </html>
